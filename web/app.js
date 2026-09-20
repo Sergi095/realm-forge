@@ -1,11 +1,22 @@
+import { openMaterialPicker } from "./material-picker.js";
+import {
+  blockKey,
+  connectedBlocks,
+  planMove,
+  bindMaterialDrags,
+  installTouchButtons,
+} from "./interaction.js";
 import {
   terrains,
   materials,
   groundHeight,
   stampStructure,
+  catalogVersion,
+  minecraftCount,
 } from "./materials.js";
 import { openDdbImport } from "./ddb-import.js";
 import init, { Realm, ability_modifier } from "./pkg/realm_forge.js";
+installTouchButtons();
 const $ = (s) => document.querySelector(s);
 const esc = (s) =>
   String(s).replace(
@@ -15,6 +26,7 @@ const esc = (s) =>
         c
       ],
   );
+const touchUI = matchMedia("(pointer: coarse)").matches;
 const colors = terrains.map((t) => t.color);
 const terrainNames = terrains.map((t) => t.name);
 let realm,
@@ -38,7 +50,80 @@ let realm,
   pending = 0,
   blocked = false,
   pinEdit = -1;
+let selectionKeys = new Set(),
+  redrawWorld = () => {},
+  cleanupMaterialDrag = () => {},
+  expandedEditor = false,
+  mapZoom = 1;
 const state = () => JSON.parse(realm.snapshot());
+function selectionChanged() {
+  const count = selectionKeys.size;
+  const bar = $("#selection-actions");
+  if (bar) {
+    bar.hidden = !count;
+    $("#selection-label").textContent =
+      `${count} block${count === 1 ? "" : "s"} selected`;
+  }
+  redrawWorld();
+}
+function selectBlocks(keys) {
+  selectionKeys = new Set(keys);
+  selectionChanged();
+}
+function moveSelection(dx, dy, dz = 0, copy = false) {
+  if (!dx && !dy && !dz && !copy) return false;
+  const result = planMove(state(), selectionKeys, dx, dy, dz, copy);
+  if (result.error) {
+    notice(result.error);
+    return false;
+  }
+  if (!commit(result.world, true)) return false;
+  selectionKeys = result.keys;
+  notice();
+  selectionChanged();
+  syncHistory();
+  return true;
+}
+function syncHistory() {
+  if ($("#undo")) $("#undo").disabled = !undo.length;
+  if ($("#redo")) $("#redo").disabled = !redo.length;
+}
+function deleteSelection() {
+  if (!selectionKeys.size) return;
+  const next = state();
+  next.blocks = next.blocks.filter((b) => !selectionKeys.has(blockKey(b)));
+  if (commit(next, true)) {
+    selectBlocks([]);
+    syncHistory();
+  }
+}
+function dropMaterial(id, x, y, z) {
+  if (!Number.isInteger(id) || id < 0 || id >= materials.length) return state();
+  checkpoint();
+  if (realm.place_block(x, y, z, id)) {
+    blockMaterial = id;
+    save();
+    selectBlocks([`${x},${y},${z}`]);
+    syncHistory();
+  }
+  return state();
+}
+function interactionBar() {
+  return `<div class="editor-controls" role="toolbar" aria-label="World interaction tools"><button data-quick-tool="select" class="${buildTool === "select" ? "primary" : ""}">↖ Select & move</button><button data-quick-tool="block" class="${buildTool === "block" ? "primary" : ""}">＋ Build</button><button data-quick-tool="navigate" class="${buildTool === "navigate" ? "primary" : ""}">✥ Pan / orbit</button>${mode === "2d" ? `<button id="zoom-out" aria-label="Zoom map out">−</button><button id="zoom-in" aria-label="Zoom map in">＋</button>` : ""}<button data-quick-tool="paint" class="${buildTool === "paint" ? "primary" : ""}">▧ Paint</button><button id="expand-editor">${expandedEditor ? "Close expanded view" : "Expand editor"}</button></div>`;
+}
+function materialDock() {
+  return `<div id="selection-actions" class="selection-actions" hidden><strong id="selection-label" role="status"></strong><button id="select-connected">Select structure</button><button id="selection-up" aria-label="Raise selected blocks">↑ Raise</button><button id="selection-down" aria-label="Lower selected blocks">↓ Lower</button><button id="selection-delete" class="danger">Delete selected</button><button id="selection-clear">Deselect</button></div><div class="material-dock" aria-label="Quick material tray"><button id="all-materials" class="all-materials" aria-label="All materials">▦<span>All materials</span></button>${[
+    ...new Set([blockMaterial, ...Array.from({ length: 24 }, (_, i) => i)]),
+  ]
+    .map((id) => materials[id])
+    .map(
+      (m) =>
+        `<button data-hot-material="${m.id}" class="${m.id === blockMaterial ? "selected" : ""}" title="${m.name}" aria-label="Build with ${m.name}"><span class="swatch texture-${m.texture}" style="background-color:${m.color}"></span><span>${m.name}</span></button>`,
+    )
+    .join(
+      "",
+    )}</div><div class="dock-hint">${touchUI ? "Tap a material, then tap the world · Select & move to drag blocks" : "Click a material · V select · B build · Alt-drag to copy"}</div>`;
+}
 function notice(message = "") {
   $("#notice").hidden = !message;
   $("#notice").textContent = message;
@@ -152,7 +237,15 @@ function heading(kicker, title, subtitle, action = "") {
   return `<div class="page-heading"><div><div class="kicker">${kicker}</div><h1>${title}</h1><p>${subtitle}</p></div>${action}</div>`;
 }
 function render() {
+  cleanupMaterialDrag();
   cleanup();
+  redrawWorld = () => {};
+  document.body.classList.toggle(
+    "editor-open",
+    expandedEditor && tab === "world",
+  );
+  const existing = new Set(state().blocks.map(blockKey));
+  selectionKeys = new Set([...selectionKeys].filter((k) => existing.has(k)));
   cleanup = () => {};
   $("#app").setAttribute("aria-busy", "false");
   document
@@ -164,7 +257,7 @@ function render() {
   else renderLore();
 }
 function worldPanels(s) {
-  return `<section class="panel"><div class="eyebrow">WORLD SCALE</div><label>Distance per tile<select id="world-scale"><option value="1.524">5 feet · battle map</option><option value="3.048">10 feet · large battle map</option><option value="10">10 metres · settlement</option><option value="100">100 metres · district</option><option value="1000">1 kilometre · region</option><option value="custom">Custom metres per tile</option></select></label><label id="custom-scale-label" hidden>Metres per tile<input id="custom-scale" type="number" min="0.1" max="100000" step="any" value="${s.meters_per_tile}"></label><p id="world-size" class="hint"></p></section><section class="panel"><div class="eyebrow">MATERIAL LIBRARY · 24 BLOCKS</div><label>Find a material<input id="material-search" placeholder="Stone, wood, glass…" value="${esc(materialFilter)}"></label><div id="material-palette" class="material-palette"></div><p class="hint">Choose a material, then place blocks or stamp a structure. Right-click a block to remove it in build mode.</p></section>`;
+  return `<section class="panel"><div class="eyebrow">WORLD SCALE</div><label>Distance per tile<select id="world-scale"><option value="1.524">5 feet · battle map</option><option value="3.048">10 feet · large battle map</option><option value="10">10 metres · settlement</option><option value="100">100 metres · district</option><option value="1000">1 kilometre · region</option><option value="custom">Custom metres per tile</option></select></label><label id="custom-scale-label" hidden>Metres per tile<input id="custom-scale" type="number" min="0.1" max="100000" step="any" value="${s.meters_per_tile}"></label><p id="world-size" class="hint"></p></section><section class="panel"><div class="eyebrow">MATERIAL LIBRARY · ${materials.length.toLocaleString()} BLOCKS</div><label>Find a material<input id="material-search" placeholder="Stone, wood, glass…" value="${esc(materialFilter)}"></label><button id="browse-materials" class="primary">All Minecraft materials</button><p id="material-results-count" class="hint"></p><div id="material-palette" class="material-palette"></div><p class="hint">Choose a material, then place blocks or stamp a structure. Right-click a block to remove it in build mode.</p></section>`;
 }
 function renderWorld() {
   const s = state();
@@ -175,7 +268,58 @@ function renderWorld() {
       "Every great adventure begins with a place.",
       `<div class="view-switch"><button id="view-2d" class="${mode === "2d" ? "primary" : ""}">2D map</button><button id="view-3d" class="${mode === "3d" ? "primary" : ""}">3D world</button></div>`,
     ) +
-    `<div class="world-toolbar"><label>Tool<select id="build-tool"><option value="paint">Paint terrain</option><option value="raise">Raise ground</option><option value="lower">Lower ground</option><option value="flatten">Level ground</option><option value="block">Place material block</option><option value="erase">Remove block</option><option value="stamp">Place structure</option></select></label><label>Brush<select id="brush-size"><option value="1">1 tile</option><option value="3">3 × 3</option><option value="5">5 × 5</option><option value="9">9 × 9</option></select></label><label>Structure<select id="structure-preset"><option value="cottage">Cottage · 5 × 5</option><option value="tower">Tower · 4 × 4</option><option value="wall">Wall · 7 tiles</option></select></label><button id="print-world" class="primary">3D print & scale</button></div><div class="atlas-layout"><section><div class="map-card"><div class="map-bar"><strong>${esc(s.title)}</strong><span>40 × 28 · ${mode === "2d" ? "TOP DOWN" : "PERSPECTIVE"}</span></div><div class="canvas-wrap" id="viewport">${mode === "2d" ? '<canvas id="map" width="1000" height="700" aria-label="World map: paint terrain or place locations with a pointer"></canvas>' : '<div id="scene" aria-label="Interactive 3D world"></div>'}</div><div class="map-foot"><span id="map-help">${mode === "2d" ? "Drag to paint · choose Place location to add a pin" : "Drag to orbit · scroll to zoom · enable paint to edit"}</span><span>5 tiles = ${(s.meters_per_tile * 5).toLocaleString()} m · <span id="block-count">${s.blocks.length} blocks</span></span></div></div><div class="locations"><div class="section-heading"><h2>Places & stories</h2><span>${s.pins.length} LOCATIONS</span></div><div class="pin-list">${s.pins.map((p, i) => `<button class="pin-item" data-pin="${i}"><strong>⌖ ${esc(p.name)}</strong><small>Tile ${p.x + 1}, ${p.y + 1} · ${p.notes ? "Has a story" : "An unwritten story"}</small></button>`).join("") || '<div class="empty" style="width:100%">Place a location on your map and give it a story.</div>'}</div><div id="pin-editor"></div></div></section><div class="atlas-tools">${worldPanels(s)}<section class="panel"><div class="eyebrow">SHAPE YOUR WORLD</div><h2>Terrain palette</h2><div class="terrain-list">${terrainNames.map((n, i) => `<button class="terrain ${i === terrain ? "selected" : ""}" data-terrain="${i}" aria-pressed="${i === terrain}"><span class="swatch" style="background:${colors[i]}"></span>${n}</button>`).join("")}</div><p class="hint">One world, two views. Your changes appear in both.</p></section><section class="panel"><div class="eyebrow">MAP TOOLS</div><div class="tool-stack"><button id="place-pin" class="${pinMode ? "primary" : ""}">⌖ ${pinMode ? "Click map to place" : "Place location"}</button>${mode === "3d" ? '<button id="paint-3d">Enable terrain painting</button><button id="reset-camera">Reset camera</button>' : ""}<button id="undo" ${undo.length ? "" : "disabled"}>↶ Undo</button><button id="redo" ${redo.length ? "" : "disabled"}>↷ Redo</button><button id="generate">✧ Generate island</button></div><p class="hint">Generate a starting landscape, then make it your own.</p></section></div></div>`;
+    `<div class="world-toolbar"><label>Tool<select id="build-tool"><option value="navigate">Pan / orbit</option><option value="select">Select & move</option><option value="paint">Paint terrain</option><option value="raise">Raise ground</option><option value="lower">Lower ground</option><option value="flatten">Level ground</option><option value="block">Place material block</option><option value="erase">Remove block</option><option value="stamp">Place structure</option></select></label><label>Brush<select id="brush-size"><option value="1">1 tile</option><option value="3">3 × 3</option><option value="5">5 × 5</option><option value="9">9 × 9</option></select></label><label>Structure<select id="structure-preset"><option value="cottage">Cottage · 5 × 5</option><option value="tower">Tower · 4 × 4</option><option value="wall">Wall · 7 tiles</option></select></label><button id="print-world" class="primary">3D print & scale</button></div><div class="atlas-layout"><section><div class="map-card ${expandedEditor ? "editor-expanded" : ""}">${interactionBar()}<div class="map-bar"><strong>${esc(s.title)}</strong><span>40 × 28 · ${mode === "2d" ? "TOP DOWN" : "PERSPECTIVE"}</span></div><div class="canvas-wrap" id="viewport">${mode === "2d" ? '<canvas id="map" width="1000" height="700" aria-label="World map: paint terrain or place locations with a pointer"></canvas>' : '<div id="scene" aria-label="Interactive 3D world"></div>'}</div>${materialDock()}<div class="map-foot"><span id="map-help">${mode === "2d" ? "Drag to paint · choose Place location to add a pin" : "Drag to orbit · scroll to zoom · enable paint to edit"}</span><span>5 tiles = ${(s.meters_per_tile * 5).toLocaleString()} m · <span id="block-count">${s.blocks.length} blocks</span></span></div></div><div class="locations"><div class="section-heading"><h2>Places & stories</h2><span>${s.pins.length} LOCATIONS</span></div><div class="pin-list">${s.pins.map((p, i) => `<button class="pin-item" data-pin="${i}"><strong>⌖ ${esc(p.name)}</strong><small>Tile ${p.x + 1}, ${p.y + 1} · ${p.notes ? "Has a story" : "An unwritten story"}</small></button>`).join("") || '<div class="empty" style="width:100%">Place a location on your map and give it a story.</div>'}</div><div id="pin-editor"></div></div></section><div class="atlas-tools">${worldPanels(s)}<section class="panel"><div class="eyebrow">SHAPE YOUR WORLD</div><h2>Terrain palette</h2><div class="terrain-list">${terrainNames.map((n, i) => `<button class="terrain ${i === terrain ? "selected" : ""}" data-terrain="${i}" aria-pressed="${i === terrain}"><span class="swatch" style="background:${colors[i]}"></span>${n}</button>`).join("")}</div><p class="hint">One world, two views. Your changes appear in both.</p></section><section class="panel"><div class="eyebrow">MAP TOOLS</div><div class="tool-stack"><button id="place-pin" class="${pinMode ? "primary" : ""}">⌖ ${pinMode ? "Click map to place" : "Place location"}</button>${mode === "3d" ? '<button id="paint-3d">Enable terrain painting</button><button id="reset-camera">Reset camera</button>' : ""}<button id="undo" ${undo.length ? "" : "disabled"}>↶ Undo</button><button id="redo" ${redo.length ? "" : "disabled"}>↷ Redo</button><button id="generate">✧ Generate island</button></div><p class="hint">Generate a starting landscape, then make it your own.</p></section></div></div>`;
+  document.querySelectorAll("[data-quick-tool]").forEach(
+    (b) =>
+      (b.onclick = () => {
+        buildTool = b.dataset.quickTool;
+        pinMode = false;
+        render();
+      }),
+  );
+  if ($("#zoom-in"))
+    $("#zoom-in").onclick = () => {
+      mapZoom = Math.min(4, mapZoom + 0.5);
+      render();
+    };
+  if ($("#zoom-out"))
+    $("#zoom-out").onclick = () => {
+      mapZoom = Math.max(1, mapZoom - 0.5);
+      render();
+    };
+  $("#expand-editor").onclick = () => {
+    expandedEditor = !expandedEditor;
+    render();
+  };
+  $("#selection-delete").onclick = deleteSelection;
+  $("#selection-clear").onclick = () => selectBlocks([]);
+  $("#selection-up").onclick = () => moveSelection(0, 0, 1);
+  $("#selection-down").onclick = () => moveSelection(0, 0, -1);
+  $("#select-connected").onclick = () =>
+    selectBlocks(
+      new Set([
+        ...selectionKeys,
+        ...connectedBlocks(state().blocks, [...selectionKeys][0]),
+      ]),
+    );
+  document.querySelectorAll("[data-hot-material]").forEach(
+    (b) =>
+      (b.onclick = () => {
+        blockMaterial = +b.dataset.hotMaterial;
+        buildTool = "block";
+        pinMode = false;
+        render();
+      }),
+  );
+  const chooseMaterial = (id) => {
+    blockMaterial = id;
+    buildTool = "block";
+    pinMode = false;
+    render();
+  };
+  $("#all-materials").onclick = () => openMaterialPicker(chooseMaterial);
+  $("#browse-materials").onclick = () =>
+    openMaterialPicker(chooseMaterial, materialFilter);
   $("#build-tool").value = buildTool;
   $("#brush-size").value = String(brushSize);
   $("#structure-preset").value = preset;
@@ -225,17 +369,24 @@ function renderWorld() {
   };
   function renderMaterials() {
     const available = materials.filter((m) =>
-      (m.name + " " + m.category)
+      (m.name + " " + m.category + " " + (m.key || "").replaceAll("_", " "))
         .toLowerCase()
         .includes(materialFilter.toLowerCase()),
     );
+    $("#material-results-count").textContent =
+      `${available.length.toLocaleString()} materials · showing ${Math.min(60, available.length)} · Minecraft Java ${catalogVersion}`;
     $("#material-palette").innerHTML =
       available
+        .slice(0, 60)
         .map(
           (m) =>
             `<button class="material-choice ${m.id === blockMaterial ? "selected" : ""}" data-material="${m.id}" title="${m.name}" aria-pressed="${m.id === blockMaterial}"><span class="swatch texture-${m.texture}" style="background-color:${m.color}"></span><span>${m.name}</span></button>`,
         )
         .join("") || '<p class="hint">No matching materials.</p>';
+    cleanupMaterialDrag();
+    cleanupMaterialDrag = bindMaterialDrags(
+      document.querySelectorAll("[data-material], [data-hot-material]"),
+    );
     document.querySelectorAll("[data-material]").forEach(
       (b) =>
         (b.onclick = () => {
@@ -248,7 +399,7 @@ function renderWorld() {
   }
   renderMaterials();
   const building = ["block", "erase", "stamp"].includes(buildTool);
-  $("#material-palette").closest("section").hidden = !building;
+  $("#material-palette").closest("section").hidden = false;
   $(".terrain-list").closest("section").hidden = building;
   $("#material-search").oninput = (e) => {
     materialFilter = e.target.value;
@@ -310,6 +461,7 @@ function renderWorld() {
   if (mode === "2d") setup2d();
   else setup3d();
   if (pinEdit >= 0 && s.pins[pinEdit]) editPin(pinEdit);
+  selectionChanged();
 }
 function addPin(x, y) {
   checkpoint();
@@ -388,9 +540,29 @@ function setup2d() {
   let painting = false,
     changed = false;
   const visited = new Set();
+  let drag = null,
+    marquee = null,
+    hover = null,
+    activePointer = null;
+  canvas.tabIndex = 0;
+  canvas.style.width = `${mapZoom * 100}%`;
+  canvas.style.touchAction = buildTool === "navigate" ? "pan-x pan-y" : "none";
+  canvas.style.cursor =
+    buildTool === "select"
+      ? "grab"
+      : buildTool === "navigate"
+        ? "grab"
+        : "crosshair";
+  $("#map-help").textContent =
+    buildTool === "select"
+      ? `${touchUI ? "Tap" : "Click"} a block, then drag · Select structure moves touching blocks · Drag empty space to select an area`
+      : buildTool === "navigate"
+        ? "Swipe to pan the map · use + / − to zoom"
+        : `${touchUI ? "Tap" : "Click"} to place · drag to paint · drag a material into the world`;
   const draw = () => {
     const s = state();
-    $("#block-count").textContent = `${s.blocks.length.toLocaleString()} / 12,000 blocks`;
+    $("#block-count").textContent =
+      `${s.blocks.length.toLocaleString()} / 12,000 blocks`;
     for (let y = 0; y < s.height; y++)
       for (let x = 0; x < s.width; x++) {
         const t = s.tiles[y * s.width + x],
@@ -430,6 +602,51 @@ function setup2d() {
       ctx.strokeStyle = "#ffffff66";
       ctx.strokeRect(b.x * 25 + 3, b.y * 25 + 3, 19, 19);
     }
+    ctx.save();
+    ctx.lineWidth = 3;
+    for (const b of s.blocks.filter((b) => selectionKeys.has(blockKey(b)))) {
+      ctx.strokeStyle = "#fff3a3";
+      ctx.strokeRect(b.x * 25 + 1, b.y * 25 + 1, 23, 23);
+    }
+    if (drag && (drag.dx || drag.dy)) {
+      const result = planMove(s, selectionKeys, drag.dx, drag.dy, 0, drag.copy);
+      ctx.strokeStyle = result.error ? "#ff6969" : "#00e6c3";
+      ctx.fillStyle = result.error ? "#ff696955" : "#00e6c366";
+      for (const b of s.blocks.filter((b) => selectionKeys.has(blockKey(b)))) {
+        const x = (b.x + drag.dx) * 25,
+          y = (b.y + drag.dy) * 25;
+        ctx.fillRect(x, y, 25, 25);
+        ctx.strokeRect(x + 1, y + 1, 23, 23);
+      }
+    }
+    if (marquee) {
+      const x = Math.min(marquee.x, marquee.endX),
+        y = Math.min(marquee.y, marquee.endY),
+        w = Math.abs(marquee.endX - marquee.x) + 1,
+        h = Math.abs(marquee.endY - marquee.y) + 1;
+      ctx.fillStyle = "#00dab333";
+      ctx.strokeStyle = "#00b69c";
+      ctx.fillRect(x * 25, y * 25, w * 25, h * 25);
+      ctx.strokeRect(x * 25, y * 25, w * 25, h * 25);
+    }
+    if (hover && !drag && !marquee && buildTool !== "navigate") {
+      const size =
+        hover.material !== undefined ||
+        ["block", "erase", "select", "stamp"].includes(buildTool)
+          ? 1
+          : brushSize;
+      const half = Math.floor(size / 2),
+        x = (hover.x - half) * 25,
+        y = (hover.y - half) * 25;
+      ctx.fillStyle =
+        hover.material !== undefined
+          ? materials[hover.material].color + "aa"
+          : "#ffffff22";
+      ctx.strokeStyle = "#fff3a3";
+      ctx.fillRect(x, y, size * 25, size * 25);
+      ctx.strokeRect(x + 1, y + 1, size * 25 - 2, size * 25 - 2);
+    }
+    ctx.restore();
     s.pins.forEach((p, i) => {
       ctx.fillStyle = "#fff7d8";
       ctx.beginPath();
@@ -476,8 +693,43 @@ function setup2d() {
     }
   };
   canvas.onpointerdown = (e) => {
-    if (e.button !== 0) return;
+    if (e.button !== 0 || buildTool === "navigate") return;
+    if (activePointer !== null && activePointer !== e.pointerId) {
+      drag = null;
+      marquee = null;
+      draw();
+      return;
+    }
+    activePointer = e.pointerId;
+    canvas.focus({ preventScroll: true });
     const [x, y] = cell(e);
+    if (buildTool === "select" && !pinMode) {
+      const b = state()
+        .blocks.filter((b) => b.x === x && b.y === y)
+        .sort((a, b) => b.z - a.z)[0];
+      if (b) {
+        const key = blockKey(b);
+        if (e.shiftKey) {
+          const next = new Set(selectionKeys);
+          next.has(key) ? next.delete(key) : next.add(key);
+          selectBlocks(next);
+        } else if (!selectionKeys.has(key)) selectBlocks([key]);
+        if (selectionKeys.has(key))
+          drag = { x, y, dx: 0, dy: 0, copy: e.altKey };
+      } else {
+        marquee = {
+          x,
+          y,
+          endX: x,
+          endY: y,
+          initial: e.shiftKey ? [...selectionKeys] : [],
+        };
+        if (!e.shiftKey) selectBlocks([]);
+      }
+      canvas.setPointerCapture(e.pointerId);
+      draw();
+      return;
+    }
     if (pinMode) {
       if (x >= 0 && x < 40 && y >= 0 && y < 28) addPin(x, y);
       return;
@@ -498,7 +750,32 @@ function setup2d() {
     paint(e);
   };
   canvas.onpointermove = (e) => {
-    if (painting) paint(e);
+    const [x, y] = cell(e);
+    if (drag) {
+      drag.dx = x - drag.x;
+      drag.dy = y - drag.y;
+      draw();
+    } else if (marquee) {
+      marquee.endX = x;
+      marquee.endY = y;
+      draw();
+    } else if (painting) paint(e);
+    else {
+      hover = { x, y };
+      draw();
+    }
+  };
+  canvas.onpointerleave = () => {
+    hover = null;
+    if (!drag && !marquee) draw();
+  };
+  canvas.ondblclick = (e) => {
+    if (buildTool !== "select") return;
+    const [x, y] = cell(e),
+      b = state()
+        .blocks.filter((b) => b.x === x && b.y === y)
+        .sort((a, b) => b.z - a.z)[0];
+    if (b) selectBlocks(connectedBlocks(state().blocks, blockKey(b)));
   };
   const finish = () => {
     if (painting) {
@@ -511,9 +788,76 @@ function setup2d() {
       $("#redo").disabled = true;
     }
   };
-  canvas.onpointerup = finish;
-  canvas.onpointercancel = finish;
-  cleanup = finish;
+  canvas.onpointerup = (e) => {
+    if (activePointer !== null && e.pointerId !== activePointer) return;
+    activePointer = null;
+    if (drag) {
+      const d = drag;
+      drag = null;
+      moveSelection(d.dx, d.dy, 0, d.copy);
+      draw();
+    } else if (marquee) {
+      const m = marquee;
+      marquee = null;
+      selectBlocks([
+        ...m.initial,
+        ...state()
+          .blocks.filter(
+            (b) =>
+              b.x >= Math.min(m.x, m.endX) &&
+              b.x <= Math.max(m.x, m.endX) &&
+              b.y >= Math.min(m.y, m.endY) &&
+              b.y <= Math.max(m.y, m.endY),
+          )
+          .map(blockKey),
+      ]);
+    }
+    finish();
+  };
+  canvas.onpointercancel = () => {
+    activePointer = null;
+    drag = null;
+    marquee = null;
+    finish();
+    draw();
+  };
+  const materialDrag = (e) => {
+    const d = e.detail,
+      r = canvas.getBoundingClientRect(),
+      frame = canvas.parentElement.getBoundingClientRect();
+    const inside =
+      d.x >= Math.max(r.left, frame.left) &&
+      d.x <= Math.min(r.right, frame.right) &&
+      d.y >= Math.max(r.top, frame.top) &&
+      d.y <= Math.min(r.bottom, frame.bottom);
+    if (!inside || d.phase === "cancel") {
+      hover = null;
+      draw();
+      return;
+    }
+    const [x, y] = cell({ clientX: d.x, clientY: d.y });
+    if (d.phase === "drop") {
+      const world = state(),
+        column = world.blocks.filter((b) => b.x === x && b.y === y),
+        z = column.length
+          ? Math.max(...column.map((b) => b.z)) + 1
+          : Math.floor(groundHeight(world, x, y));
+      dropMaterial(d.id, x, y, z);
+      hover = null;
+      draw();
+    } else {
+      hover = { x, y, material: d.id };
+      draw();
+    }
+  };
+  window.addEventListener("world-material-drag", materialDrag);
+  redrawWorld = draw;
+  cleanup = () => {
+    drag = null;
+    marquee = null;
+    finish();
+    window.removeEventListener("world-material-drag", materialDrag);
+  };
   draw();
 }
 let sceneGeneration = 0;
@@ -528,6 +872,16 @@ async function setup3d() {
     if (disposed || generation !== sceneGeneration) return;
     cleanup = mountWorld($("#scene"), state(), {
       colors,
+      selection: () => selectionKeys,
+      select: selectBlocks,
+      move: moveSelection,
+      plan: (dx, dy, dz = 0, copy = false) =>
+        planMove(state(), selectionKeys, dx, dy, dz, copy),
+      connected: (key) => selectBlocks(connectedBlocks(state().blocks, key)),
+      drop: dropMaterial,
+      refresh: (fn) => {
+        redrawWorld = () => fn(state());
+      },
       tool: () => buildTool,
       material: () => blockMaterial,
       brush: () => brushSize,
@@ -859,3 +1213,62 @@ if (navigator.locks) {
       notice("Could not open the workshop: " + e.message);
     });
 } else boot().catch((e) => notice("Could not open the workshop: " + e.message));
+
+document.addEventListener("keydown", (e) => {
+  if (
+    !realm ||
+    tab !== "world" ||
+    blocked ||
+    document.querySelector("dialog[open]") ||
+    e.target.closest("input, textarea, select, [contenteditable]")
+  )
+    return;
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z") {
+    e.preventDefault();
+    $(e.shiftKey ? "#redo" : "#undo")?.click();
+    return;
+  }
+  if (e.key === "Escape") {
+    if (selectionKeys.size) selectBlocks([]);
+    else if (expandedEditor) {
+      expandedEditor = false;
+      render();
+    }
+  } else if (
+    (e.key === "Delete" || e.key === "Backspace") &&
+    selectionKeys.size
+  ) {
+    e.preventDefault();
+    deleteSelection();
+  } else if (
+    selectionKeys.size &&
+    [
+      "ArrowLeft",
+      "ArrowRight",
+      "ArrowUp",
+      "ArrowDown",
+      "PageUp",
+      "PageDown",
+    ].includes(e.key)
+  ) {
+    e.preventDefault();
+    const shifts = {
+      ArrowLeft: [-1, 0, 0],
+      ArrowRight: [1, 0, 0],
+      ArrowUp: [0, -1, 0],
+      ArrowDown: [0, 1, 0],
+      PageUp: [0, 0, 1],
+      PageDown: [0, 0, -1],
+    };
+    moveSelection(...shifts[e.key]);
+  } else if (
+    !e.ctrlKey &&
+    !e.metaKey &&
+    !e.altKey &&
+    { v: "select", b: "block", p: "paint" }[e.key.toLowerCase()]
+  ) {
+    buildTool = { v: "select", b: "block", p: "paint" }[e.key.toLowerCase()];
+    pinMode = false;
+    render();
+  }
+});

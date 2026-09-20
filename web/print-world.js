@@ -1,4 +1,9 @@
-import { terrains, materials, printColors } from "./materials.js";
+import {
+  terrains,
+  materials,
+  printColors,
+  baseColorIndex,
+} from "./materials.js";
 const esc = (s) =>
   String(s).replace(
     /[&<>"']/g,
@@ -53,7 +58,7 @@ export async function openPrintWorld(realm) {
         ...world.tiles,
         ...world.blocks.map((b) => 12 + b.material),
         29,
-        36,
+        baseColorIndex,
       ]),
     ].sort((a, b) => a - b);
   $("#print-colors").innerHTML = used
@@ -129,7 +134,7 @@ export async function openPrintWorld(realm) {
     );
   }
   function package3mf(m) {
-    const xml = `<?xml version="1.0" encoding="UTF-8"?><model unit="millimeter" xml:lang="en-US" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02" xmlns:m="http://schemas.microsoft.com/3dmanufacturing/material/2015/02" requiredextensions="m"><metadata name="Title">${esc(world.title)}</metadata><metadata name="Application">DND Campaign Building</metadata><resources><m:colorgroup id="1">${settings.colors.map((color) => `<m:color color="${color.toUpperCase()}FF"/>`).join("")}</m:colorgroup><object id="2" type="model" pid="1" pindex="36"><mesh><vertices>${m.vertices.map((v) => `<vertex x="${v[0]}" y="${v[1]}" z="${v[2]}"/>`).join("")}</vertices><triangles>${m.faces.map((f, i) => `<triangle v1="${f[0]}" v2="${f[1]}" v3="${f[2]}" pid="1" p1="${m.colors[i]}" p2="${m.colors[i]}" p3="${m.colors[i]}"/>`).join("")}</triangles></mesh></object></resources><build><item objectid="2"/></build></model>`;
+    const xml = `<?xml version="1.0" encoding="UTF-8"?><model unit="millimeter" xml:lang="en-US" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02" xmlns:m="http://schemas.microsoft.com/3dmanufacturing/material/2015/02" requiredextensions="m"><metadata name="Title">${esc(world.title)}</metadata><metadata name="Application">DND Campaign Building</metadata><resources><m:colorgroup id="1">${settings.colors.map((color) => `<m:color color="${color.toUpperCase()}FF"/>`).join("")}</m:colorgroup><object id="2" type="model" pid="1" pindex="${baseColorIndex}"><mesh><vertices>${m.vertices.map((v) => `<vertex x="${v[0]}" y="${v[1]}" z="${v[2]}"/>`).join("")}</vertices><triangles>${m.faces.map((f, i) => `<triangle v1="${f[0]}" v2="${f[1]}" v3="${f[2]}" pid="1" p1="${m.colors[i]}" p2="${m.colors[i]}" p3="${m.colors[i]}"/>`).join("")}</triangles></mesh></object></resources><build><item objectid="2"/></build></model>`;
     const files = {
       "[Content_Types].xml":
         '<?xml version="1.0" encoding="UTF-8"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="model" ContentType="application/vnd.ms-package.3dmanufacturing-3dmodel+xml"/></Types>',

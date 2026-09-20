@@ -1,5 +1,7 @@
 mod ddb;
+mod material_catalog;
 mod printing;
+use material_catalog::MATERIAL_COUNT;
 use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::*;
 
@@ -40,7 +42,7 @@ pub struct Block {
     pub x: usize,
     pub y: usize,
     pub z: u8,
-    pub material: u8,
+    pub material: u16,
 }
 fn default_elevations() -> Vec<u8> {
     vec![0; 40 * 28]
@@ -104,7 +106,7 @@ impl Project {
                 b.x >= self.width
                     || b.y >= self.height
                     || b.z > 63
-                    || b.material > 23
+                    || b.material >= MATERIAL_COUNT
                     || !occupied.insert((b.x, b.y, b.z))
             })
         {
@@ -279,8 +281,8 @@ impl Realm {
         }
         changed
     }
-    pub fn place_block(&mut self, x: usize, y: usize, z: u8, material: u8) -> bool {
-        if x >= 40 || y >= 28 || z > 63 || material > 23 {
+    pub fn place_block(&mut self, x: usize, y: usize, z: u8, material: u16) -> bool {
+        if x >= 40 || y >= 28 || z > 63 || material >= MATERIAL_COUNT {
             return false;
         }
         if let Some(block) = self
@@ -368,6 +370,21 @@ pub fn preview_ddb(json: &str) -> Result<String, JsValue> {
 mod tests {
     use super::*;
     #[test]
+    fn entire_material_catalog_is_supported_and_saved() {
+        let catalog: serde_json::Value =
+            serde_json::from_str(include_str!("../web/minecraft-catalog.json")).unwrap();
+        assert_eq!(
+            catalog["blocks"].as_array().unwrap().len() + 24,
+            MATERIAL_COUNT as usize
+        );
+        let mut r = Realm::new();
+        assert!(r.place_block(2, 3, 4, MATERIAL_COUNT - 1));
+        let saved = r.snapshot();
+        let mut restored = Realm::new();
+        restored.restore(&saved).unwrap();
+        assert_eq!(restored.project.blocks[0].material, MATERIAL_COUNT - 1);
+    }
+    #[test]
     fn round_trip() {
         let p = Project::default();
         assert!(parse_project(&serde_json::to_string(&p).unwrap()).is_ok());
@@ -429,7 +446,8 @@ mod tests {
         assert!(r.place_block(0, 0, 0, 23));
         assert!(!r.place_block(40, 0, 0, 0));
         assert!(!r.place_block(0, 0, 64, 0));
-        assert!(!r.place_block(0, 0, 0, 24));
+        assert!(!r.place_block(0, 0, 0, MATERIAL_COUNT));
+        assert!(r.place_block(1, 0, 0, MATERIAL_COUNT - 1));
         assert!(r.remove_block(0, 0, 0));
         assert!(!r.remove_block(0, 0, 0));
         assert!(r.brush(0, 0, 3, 7, 0));

@@ -1,11 +1,12 @@
 # DND Campaign Building
 
-A browser-only character and world-building workshop. Rust compiles to WebAssembly for the project model, save validation, terrain generation, terrain edits, and ability modifiers. A small JavaScript interface draws the 2D canvas and uses Three.js for the 3D view.
+A desktop-first, browser-only character and world-building workshop with phone-friendly touch controls. Rust compiles to WebAssembly for the project model, save validation, terrain generation, terrain edits, and ability modifiers. A small JavaScript interface draws the 2D canvas and uses Three.js for the 3D view.
 
 ## Features
 
 - Switch between a paintable 2D tile map and an orbitable 3D terrain view of the same world.
-- Twelve terrain types, 24 textured building materials, stacked blocks, terrain elevation brushes, and cottage/tower/wall presets.
+- Twelve terrain types, 1,312 material choices (1,288 Minecraft Java 26.3 block-state entries plus 24 original materials), stacked blocks, elevation brushes, and cottage/tower/wall presets.
+- Touch-friendly material tray, full-screen editor, selection, drag-to-move, connected-structure selection, area selection in 2D, and collision-safe undoable moves.
 - Seeded island generation, location pins with notes, map undo/redo, and configurable real-world distance per tile.
 - Color 3MF and single-color STL print exports with dimensional preview, scale presets, and printable sections.
 - Multiple character sheets: ancestry, class, level, HP, six ability scores, inventory, spells, and backstory.
@@ -23,6 +24,18 @@ Projects live in the browser profile and origin where you opened the app. GitHub
 No home machines, ports, tunnels, SSH access, or home-hosted services are used by the deployed app. There is no device sync or multiplayer. Share a backup file to share a campaign.
 
 Only one tab edits a realm at once on browsers supporting the Web Locks API. A 5 MB import limit and field validation protect against accidentally loading invalid backups. Terrain maps are currently 40 × 28 cells, with up to 100 characters, 500 locations, and 12,000 building blocks. Undo history is temporary and not included in backups.
+
+## Materials and touch building
+
+On a computer, open **All materials** in the map tray or **All Minecraft materials** in the sidebar. Use the mouse to select, drag, paint, and build. On a phone, tap **Expand editor**, then **All materials** at the left of the bottom tray. Search by name (for example, diamond ore, cherry planks, or red wool), filter by category or collection, and tap a material. Tap the map to build with it. Swipe the tray horizontally for quick choices; vertical drags carry a material into the map. The full catalog is paginated so phones only render a small set of previews at once.
+
+Use **Select & move** to tap and drag a block. **Select structure** expands the selection to all face-connected blocks; touching structures count as one connected structure. **Raise**, **Lower**, **Delete selected**, and **Deselect** are touch buttons. In 2D, drag an empty area to select all blocks in its rectangle. Moves snap to the tile grid, preserve block heights, and refuse overlaps or out-of-bounds placements. They do not simulate gravity. Use **Pan / orbit** to navigate, the 2D +/− buttons to zoom the map, or pinch in 3D. Selected blocks are outlined; invalid move previews turn red.
+
+On a keyboard, V selects, B builds, P paints, Delete removes the selection, arrow keys move it, and Page Up/Down changes its height. Shift-click adds/removes blocks from a selection; Alt-drag copies it. Ctrl/Cmd+Z undoes, and Ctrl/Cmd+Shift+Z redoes. Escape clears a selection or exits the expanded editor. Shortcuts do not intercept text fields or dialogs.
+
+The Minecraft catalog is extracted from the `assets/minecraft/blockstates/` identifiers and English names in the official [Java 26.3 release metadata](https://piston-meta.mojang.com/v1/packages/96c00d95a31328714d3811cfade2804bb050e455/26.3.json). It includes color variants, wood families, ores, decorative and technical entries. Entries are represented by cubes with original procedural textures: Minecraft-specific shapes (such as stairs, fences, doors and plants), animations, redstone behavior, and other gameplay mechanics are not reproduced. Print exports assign solid colors to those materials.
+
+`web/minecraft-catalog.json` records the source version, client SHA-1, and every imported identifier. `python3 scripts/update-material-catalog.py 26.3` reproduces/updates it, verifies the download hash, and generates the Rust material bounds. IDs are append-only, and the original 24 IDs are retained to preserve earlier saves. The updater reads ZIP metadata only; no Minecraft executable or texture asset is redistributed. Runtime rendering creates textures only for materials used in the current world.
 
 ## Importing from D&D Beyond
 

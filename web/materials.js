@@ -1,3 +1,11 @@
+const catalogResponse = await fetch(
+  new URL("./minecraft-catalog.json", import.meta.url),
+);
+if (!catalogResponse.ok)
+  throw new Error("The material catalog could not load. Refresh to try again.");
+const catalog = await catalogResponse.json();
+export const catalogVersion = catalog.version;
+export const minecraftCount = catalog.current_keys.length;
 export const terrains = [
   ["Meadow", "#91aa73", 0.6, "grass"],
   ["Water", "#679da5", 0.18, "water"],
@@ -43,13 +51,26 @@ export const materials = [
   ["Basalt", "#535b60", "stone", "Natural"],
   ["Clay", "#b77e62", "grain", "Natural"],
   ["Gravel", "#a69f91", "stone", "Natural"],
-].map(([name, color, texture, category], id) => ({
-  id,
-  name,
-  color,
-  texture,
-  category,
-}));
+]
+  .map(([name, color, texture, category], id) => ({
+    id,
+    name,
+    color,
+    texture,
+    category,
+    source: "Original",
+  }))
+  .concat(
+    catalog.blocks.map((m, index) => ({
+      ...m,
+      id: 24 + index,
+      source: "Minecraft",
+    })),
+  );
+export const baseColorIndex = terrains.length + materials.length;
+export const materialCategories = [
+  ...new Set(materials.map((m) => m.category)),
+].sort();
 export const printColors = [
   ...terrains,
   ...materials,
@@ -127,6 +148,55 @@ export function textureCanvas(material) {
       ctx.lineTo(29, y);
       ctx.stroke();
     }
+  }
+  if (kind === "ore") {
+    ctx.fillStyle = material.accent || "#6bcbd3";
+    for (let i = 0; i < 12; i++) {
+      const x = Math.floor(random() * 14) * 2,
+        y = Math.floor(random() * 14) * 2;
+      ctx.fillRect(x, y, 4, 3);
+      ctx.fillStyle = "#ffffff77";
+      ctx.fillRect(x, y, 2, 1);
+      ctx.fillStyle = material.accent;
+    }
+  }
+  if (kind === "fabric") {
+    ctx.strokeStyle = "#ffffff22";
+    for (let x = 0; x < 32; x += 3) {
+      ctx.beginPath();
+      ctx.moveTo(x, 0);
+      ctx.lineTo(x, 32);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(0, x);
+      ctx.lineTo(32, x);
+      ctx.stroke();
+    }
+  }
+  if (kind === "flower") {
+    ctx.fillStyle = material.accent || "#eeb5bc";
+    for (let i = 0; i < 8; i++) {
+      const x = Math.floor(random() * 25),
+        y = Math.floor(random() * 25);
+      ctx.fillRect(x, y + 2, 6, 2);
+      ctx.fillRect(x + 2, y, 2, 6);
+    }
+  }
+  if (kind === "machine") {
+    ctx.fillStyle = "#262d30";
+    ctx.fillRect(5, 7, 22, 16);
+    ctx.fillStyle = material.accent || "#c24b3f";
+    ctx.fillRect(8, 10, 4, 4);
+    ctx.fillRect(19, 17, 5, 3);
+    ctx.strokeRect(2, 2, 28, 28);
+  }
+  if (kind === "books") {
+    const bookColors = ["#95494a", "#56865a", "#dbb963", "#5c80a5"];
+    for (let y = 3; y < 32; y += 15)
+      for (let x = 2; x < 30; x += 5) {
+        ctx.fillStyle = bookColors[Math.floor(random() * 4)];
+        ctx.fillRect(x, y, 4, 11);
+      }
   }
   return c;
 }

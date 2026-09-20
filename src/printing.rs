@@ -1,5 +1,6 @@
 //! A closed height-field solid: shared top, bottom and boundary vertices.
 //! Coordinates are millimetres with Z up. No overlapping/floating scene meshes.
+use crate::material_catalog::BASE_COLOR;
 use crate::Project;
 
 const SAMPLES: usize = 4;
@@ -11,12 +12,12 @@ pub const HEIGHTS: [f32; 12] = [
 struct Mesh {
     vertices: Vec<[f32; 3]>,
     faces: Vec<[usize; 3]>,
-    colors: Vec<u8>,
+    colors: Vec<u16>,
 }
 impl Mesh {
     fn quad(&mut self, a: usize, b: usize, c: usize, d: usize) {
         self.faces.extend([[a, b, c], [a, c, d]]);
-        self.colors.extend([36, 36]);
+        self.colors.extend([BASE_COLOR, BASE_COLOR]);
     }
     fn stl(&self) -> Vec<u8> {
         let mut bytes = vec![0u8; 80];
@@ -109,7 +110,7 @@ fn mesh_region(
         .enumerate()
         .map(|(i, t)| HEIGHTS[*t as usize] + project.elevations[i] as f32)
         .collect();
-    let mut surface_colors = project.tiles.clone();
+    let mut surface_colors: Vec<u16> = project.tiles.iter().map(|v| *v as u16).collect();
     for b in &project.blocks {
         let i = b.y * project.width + b.x;
         if b.z as f32 + 1.0 >= surface[i] {
@@ -441,6 +442,6 @@ mod tests {
         }
         assert_eq!(left.colors.len(), left.faces.len());
         assert!(left.colors.contains(&29));
-        assert!(left.colors.iter().all(|c| *c <= 36));
+        assert!(left.colors.iter().all(|c| *c <= BASE_COLOR));
     }
 }

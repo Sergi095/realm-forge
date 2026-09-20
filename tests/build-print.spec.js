@@ -119,7 +119,7 @@ print(json.dumps({'unit':m.attrib['unit'],'vertices':len(v),'triangles':len(t),'
     ),
   );
   expect(result.unit).toBe("millimeter");
-  expect(result.colors).toBe(37);
+  expect(result.colors).toBe(1325);
   expect(result.first).toBe("#FF0000FF");
   expect(result.triangles).toBeGreaterThan(70000);
   await page.screenshot({ path: "test-results/color-print-preview.png" });
