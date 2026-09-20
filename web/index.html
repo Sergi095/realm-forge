@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta name="theme-color" content="#172824" />
+    <meta
+      name="description"
+      content="Build characters, paint fantasy worlds, and keep your campaign in your browser."
+    />
+    <title>Realm Forge · Your next adventure</title>
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <header>
+      <a class="brand" href="./"
+        ><span class="sigil">✧</span> REALM FORGE
+        <small>THE CAMPAIGN WORKSHOP</small></a
+      >
+      <div class="header-actions">
+        <span id="save-status" role="status">Opening your realm…</span
+        ><button id="export" disabled>↓ Export backup</button
+        ><button id="import" disabled>↑ Import</button
+        ><input
+          type="file"
+          id="import-file"
+          accept="application/json,.json"
+          hidden
+        />
+      </div>
+    </header>
+    <div id="notice" role="alert" hidden></div>
+    <div class="shell">
+      <aside>
+        <div class="eyebrow">YOUR WORKSPACE</div>
+        <nav aria-label="Workspace">
+          <button data-tab="world" class="active">
+            ◈ <span>World atlas</span></button
+          ><button data-tab="characters">
+            ♙ <span>Characters</span><b id="character-count">0</b></button
+          ><button data-tab="lore">☷ <span>World notebook</span></button>
+        </nav>
+        <div class="sidebar-bottom">
+          <span class="local-dot"></span> Yours, by design
+          <p>Saved in this browser.<br />Export a backup to keep it safe.</p>
+          <button id="persist">Keep browser storage</button>
+        </div>
+      </aside>
+      <main id="app" aria-busy="true">
+        <div class="loading">Preparing your workshop…</div>
+      </main>
+    </div>
+    <footer>
+      <span>CRAFT A WORLD WORTH GETTING LOST IN.</span
+      ><span>Rust + WebAssembly · No accounts · No cloud saves</span>
+    </footer>
+    <dialog id="confirm-dialog">
+      <h2 id="confirm-title"></h2>
+      <p id="confirm-text"></p>
+      <div class="actions">
+        <button id="confirm-no">Cancel</button
+        ><button id="confirm-yes" class="primary">Continue</button>
+      </div>
+    </dialog>
+    <script type="importmap">
+      { "imports": { "three": "./vendor/three.module.js" } }
+    </script>
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>

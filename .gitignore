@@ -1,0 +1,7 @@
+/target/
+/web/pkg/
+/node_modules/
+/test-results/
+/playwright-report/
+
+/web/vendor/

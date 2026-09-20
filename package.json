@@ -1,0 +1,15 @@
+{
+  "name": "realm-forge",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "wasm-pack build --target web --out-dir web/pkg --release && node scripts/vendor.mjs",
+    "test": "playwright test"
+  },
+  "dependencies": {
+    "three": "^0.180.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.55.0"
+  }
+}
