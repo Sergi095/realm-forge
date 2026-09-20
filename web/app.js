@@ -390,6 +390,7 @@ function setup2d() {
   const visited = new Set();
   const draw = () => {
     const s = state();
+    $("#block-count").textContent = `${s.blocks.length.toLocaleString()} / 12,000 blocks`;
     for (let y = 0; y < s.height; y++)
       for (let x = 0; x < s.width; x++) {
         const t = s.tiles[y * s.width + x],

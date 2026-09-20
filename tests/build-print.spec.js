@@ -37,6 +37,7 @@ test("materials, structures, elevation and scale persist across both views", asy
   await page.locator("#map").click({ position: { x: 200, y: 160 } });
   await expect.poll(async () => (await snapshot(page)).blocks.length).toBe(1);
   expect((await snapshot(page)).blocks[0].material).toBe(3);
+  await expect(page.locator("#block-count")).toHaveText("1 / 12,000 blocks");
   await page.locator("#build-tool").selectOption("raise");
   await page.locator("#brush-size").selectOption("3");
   await page.locator("#map").click({ position: { x: 300, y: 200 } });
