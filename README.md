@@ -7,6 +7,7 @@ A browser-only character and world-building workshop. Rust compiles to WebAssemb
 - Switch between a paintable 2D tile map and an orbitable 3D terrain view of the same world.
 - Six terrain types, seeded island generation, location pins with notes, map undo/redo.
 - Multiple character sheets: ancestry, class, level, HP, six ability scores, inventory, spells, and backstory.
+- D&D Beyond character-data import with editable preview, duplicate handling, and original JSON retention.
 - Realm name and campaign notebook.
 - IndexedDB autosaves, JSON export/import, validated backups, and a single-editor browser lock.
 - Responsive layout and self-hosted dependencies. No analytics, external fonts, backend, or accounts.
@@ -15,11 +16,24 @@ The character sheet is edition-neutral and calculates ability modifiers only. It
 
 ## Storage and privacy
 
-Projects live in the browser profile and origin where you opened the app. GitHub hosts only the public application files. Campaign content is not uploaded. Clearing site data, using private browsing, or changing devices may remove or hide local saves; regularly use **Export backup**. Importing replaces the current workspace after confirmation. Keep a backup before importing.
+Projects live in the browser profile and origin where you opened the app. GitHub hosts only the public application files. Campaign content is not uploaded. Clearing site data, using private browsing, or changing devices may remove or hide local saves; regularly use **Export backup**. Importing a **realm backup** replaces the current workspace after confirmation. Importing a **D&D Beyond character** adds one character, unless you explicitly choose to replace an existing import. Keep a backup before importing.
 
 No home machines, ports, tunnels, SSH access, or home-hosted services are used by the deployed app. There is no device sync or multiplayer. Share a backup file to share a campaign.
 
 Only one tab edits a realm at once on browsers supporting the Web Locks API. A 5 MB import limit and field validation protect against accidentally loading invalid backups. Terrain maps are currently 40 × 28 cells, with up to 100 characters and 500 locations. Undo history is temporary and not included in backups.
+
+## Importing from D&D Beyond
+
+1. Open **Characters → Import D&D Beyond**.
+2. Paste a character link or numeric ID. **Load character** attempts a direct request to D&D Beyond with no credentials or proxy. D&D Beyond's browser-access restrictions can block this.
+3. The reliable fallback is **Open character data**: if you can access that JSON page, save it as a `.json` file (Ctrl/Cmd+S), then select it under **Choose D&D Beyond JSON**. A PDF sheet or saved HTML webpage is not supported. Private/inaccessible characters cannot be fetched by this app; it never asks for a D&D Beyond login, cookie, or token.
+4. Review and correct the suggested scores and maximum HP, then choose **Add character to realm**. Existing maps and notes are preserved. Re-importing the same ID offers either a new copy or replacement of the existing character.
+
+The Rust importer accepts a single v5 character object, a `{data: ...}` response, or a `{character: ...}` wrapper. It maps identity, class levels, species, ability scores, estimated HP, equipment, currency, spell names, background, notes, and feature names. It uses base/bonus/override stats and common unconditional modifiers, including equipped and attuned item modifiers. It is not a complete rules engine: conditional effects, class choices, custom overrides, complex item effects, skills, AC, and combat automation are not fully mapped. Check the editable preview against the original sheet.
+
+The original character object is retained locally and included in realm backups. **Download original JSON** lets you recover fields not shown in Realm Forge. These are one-time snapshots; later D&D Beyond changes do not sync automatically. Maximum input size is 2 MB per character; the whole realm still needs to fit the 5 MB backup limit.
+
+D&D Beyond's character-data endpoint is not a guaranteed public integration API. Network imports depend on its availability and CORS policy. The automated network tests use a mocked response; file imports are tested with a synthetic v5-shaped fixture. No user's account or character data is bundled with the app.
 
 ## Development
 

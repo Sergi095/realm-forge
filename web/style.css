@@ -626,3 +626,116 @@ dialog h2 {
   font-size: 12px;
   padding: 8px 12px;
 }
+.character-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.ddb-dialog {
+  max-width: 800px;
+  width: calc(100% - 24px);
+  max-height: 90vh;
+  overflow: auto;
+}
+.ddb-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 20px;
+  align-items: flex-start;
+}
+.ddb-heading h2 {
+  margin: 0;
+}
+.ddb-heading button {
+  font-size: 24px;
+  padding: 0 12px;
+}
+.import-method {
+  padding: 18px 0;
+  border-top: 1px solid var(--line);
+  margin-top: 20px;
+}
+.import-method h3,
+.import-review h3 {
+  font:
+    22px Georgia,
+    serif;
+  margin: 0 0 15px;
+}
+.import-actions {
+  display: flex;
+  gap: 18px;
+  align-items: center;
+  margin-top: 12px;
+  flex-wrap: wrap;
+}
+.import-actions a,
+.import-source a {
+  color: var(--green);
+}
+#ddb-error {
+  background: #f6e7c9;
+  color: #663f1f;
+  border-radius: 6px;
+  padding: 15px;
+}
+.import-review {
+  background: #edf0e4;
+  border-radius: 8px;
+  padding: 22px;
+  margin-top: 22px;
+}
+.import-warnings {
+  font-size: 12px;
+  padding-left: 20px;
+  color: #586443;
+}
+.import-warnings li {
+  margin: 8px 0;
+}
+.import-review pre {
+  font: 12px/1.7 system-ui;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 220px;
+  overflow: auto;
+}
+.duplicate-choice {
+  margin-top: 20px;
+}
+.import-source {
+  background: #edf0e4;
+  border-radius: 6px;
+  padding: 15px;
+  margin-bottom: 22px;
+  font-size: 12px;
+}
+.import-source button {
+  font-size: 11px;
+  display: block;
+  margin-top: 10px;
+}
+.import-source details {
+  margin-top: 12px;
+}
+.import-source li {
+  margin: 8px 0;
+}
+summary {
+  cursor: pointer;
+}
+@media (max-width: 720px) {
+  .character-actions {
+    justify-content: flex-start;
+  }
+  .ddb-dialog {
+    padding: 18px;
+  }
+  .import-review {
+    padding: 15px;
+  }
+  .page-heading:has(.character-actions) {
+    flex-wrap: wrap;
+  }
+}

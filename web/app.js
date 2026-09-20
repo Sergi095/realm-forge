@@ -1,3 +1,4 @@
+import { openDdbImport } from "./ddb-import.js";
 import init, { Realm, ability_modifier } from "./pkg/realm_forge.js";
 const $ = (s) => document.querySelector(s);
 const esc = (s) =>
@@ -408,11 +409,11 @@ function renderCharacters() {
       "ASSEMBLE YOUR PARTY",
       "Characters",
       "Heroes, wanderers, and the people they become.",
-      '<button id="add-character" class="primary">+ New character</button>',
+      '<div class="character-actions"><button id="import-ddb">Import D&D Beyond</button><button id="add-character" class="primary">+ New character</button></div>',
     ) +
     (!c
       ? '<div class="empty"><h2>Every story needs a hero.</h2><p>Create your first character to begin. Use your preferred D&D rules for class features and spells.</p></div>'
-      : `<div class="character-layout"><div class="character-list">${s.characters.map((c, i) => `<button class="character-card ${i === selected ? "selected" : ""}" data-character="${i}"><strong>${esc(c.name)}</strong><small>Level ${c.level} · ${esc(c.class || "Adventurer")}</small></button>`).join("")}</div><section class="panel"><form id="character-form"><div class="form-grid">${[
+      : `<div class="character-layout"><div class="character-list">${s.characters.map((c, i) => `<button class="character-card ${i === selected ? "selected" : ""}" data-character="${i}"><strong>${esc(c.name)}</strong><small>Level ${c.level} · ${esc(c.class || "Adventurer")}</small></button>`).join("")}</div><section class="panel">${c.source ? `<div class="import-source"><span>Imported from <a href="https://www.dndbeyond.com/characters/${c.source.id}" target="_blank" rel="noopener noreferrer">D&D Beyond ↗</a> · one-time copy</span><button id="download-ddb" type="button">Download original JSON</button><details><summary>Import notes</summary><ul>${c.source.warnings.map((w) => `<li>${esc(w)}</li>`).join("")}</ul></details></div>` : ""}<form id="character-form"><div class="form-grid">${[
           ["name", "Name", c.name],
           ["ancestry", "Ancestry / species", c.ancestry],
           ["class", "Class", c.class],
@@ -437,6 +438,37 @@ function renderCharacters() {
           .join(
             "",
           )}</div><div class="actions"><button type="button" id="delete-character" class="danger">Delete character</button></div><p class="hint">Edits save automatically. Ability modifiers are calculated; this is a flexible sheet, not an edition-specific rules validator.</p></form></section></div>`);
+  $("#import-ddb").onclick = () =>
+    openDdbImport({
+      characters: state().characters,
+      onImport(character, replaceIndex) {
+        const s = state();
+        if (replaceIndex >= 0) s.characters[replaceIndex] = character;
+        else s.characters.push(character);
+        const candidate = new Realm();
+        try {
+          candidate.restore(JSON.stringify(s));
+        } finally {
+          candidate.free();
+        }
+        if (!commit(s, true)) return false;
+        selected = replaceIndex >= 0 ? replaceIndex : s.characters.length - 1;
+        notice();
+        render();
+        return true;
+      },
+    });
+  if (c?.source)
+    $("#download-ddb").onclick = () => {
+      const url = URL.createObjectURL(
+        new Blob([c.source.original], { type: "application/json" }),
+      );
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `dndbeyond-${c.source.id}.json`;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    };
   $("#add-character").onclick = () => {
     const s = state();
     s.characters.push({

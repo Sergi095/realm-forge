@@ -1,0 +1,100 @@
+{
+  "success": true,
+  "data": {
+    "id": 123456789,
+    "name": "Ari <the brave>",
+    "race": {
+      "fullName": "High Elf",
+      "racialTraits": [{ "definition": { "name": "Keen Senses" } }]
+    },
+    "background": { "definition": { "name": "Sage" } },
+    "classes": [
+      {
+        "level": 3,
+        "definition": { "name": "Wizard" },
+        "subclassDefinition": { "name": "Evoker" },
+        "classFeatures": [
+          { "definition": { "id": 901, "name": "Spellcasting" } }
+        ]
+      }
+    ],
+    "stats": [
+      { "id": 1, "value": 8 },
+      { "id": 2, "value": 14 },
+      { "id": 3, "value": 14 },
+      { "id": 4, "value": 15 },
+      { "id": 5, "value": 12 },
+      { "id": 6, "value": 10 }
+    ],
+    "bonusStats": [
+      { "id": 1, "value": 0 },
+      { "id": 2, "value": 0 },
+      { "id": 3, "value": 0 },
+      { "id": 4, "value": 0 },
+      { "id": 5, "value": 0 },
+      { "id": 6, "value": 0 }
+    ],
+    "overrideStats": [
+      { "id": 1, "value": null },
+      { "id": 2, "value": null },
+      { "id": 3, "value": null },
+      { "id": 4, "value": null },
+      { "id": 5, "value": null },
+      { "id": 6, "value": null }
+    ],
+    "baseHitPoints": 14,
+    "bonusHitPoints": 0,
+    "removedHitPoints": 3,
+    "temporaryHitPoints": 2,
+    "modifiers": {
+      "race": [
+        {
+          "id": "int-bonus",
+          "type": "bonus",
+          "subType": "intelligence-score",
+          "value": 1
+        }
+      ],
+      "class": [],
+      "feat": [],
+      "background": [],
+      "item": []
+    },
+    "inventory": [
+      {
+        "quantity": 1,
+        "equipped": true,
+        "isAttuned": false,
+        "definition": { "name": "Quarterstaff", "grantedModifiers": [] }
+      },
+      { "quantity": 3, "equipped": false, "definition": { "name": "Torch" } }
+    ],
+    "currencies": { "gp": 17, "sp": 3 },
+    "classSpells": [
+      {
+        "characterClassId": 1,
+        "spells": [
+          {
+            "prepared": true,
+            "definition": { "name": "Magic Missile", "level": 1 }
+          },
+          { "prepared": false, "definition": { "name": "Light", "level": 0 } }
+        ]
+      }
+    ],
+    "spells": {
+      "race": [
+        { "prepared": false, "definition": { "name": "Light", "level": 0 } }
+      ]
+    },
+    "notes": {
+      "backstory": "<p>A traveler from the northern woods.</p>",
+      "otherNotes": "<img src=x onerror=alert(1)>Careful with the old bridge."
+    },
+    "traits": { "ideals": "Protect the lost." },
+    "feats": [],
+    "customFutureField": {
+      "preserve": "This unsupported field stays in the original JSON."
+    }
+  }
+}

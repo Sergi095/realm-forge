@@ -1,3 +1,4 @@
+mod ddb;
 use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::*;
 
@@ -13,6 +14,16 @@ pub struct Character {
     pub notes: String,
     pub inventory: String,
     pub spells: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<ImportedSource>,
+}
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ImportedSource {
+    pub kind: String,
+    pub id: u64,
+    pub original: String,
+    pub warnings: Vec<String>,
 }
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -69,6 +80,17 @@ impl Project {
             );
         }
         for c in &self.characters {
+            if let Some(source) = &c.source {
+                if source.kind != "dndbeyond"
+                    || source.id == 0
+                    || source.original.len() > 2_000_000
+                    || source.warnings.len() > 50
+                    || source.warnings.iter().any(|w| w.len() > 2000)
+                    || serde_json::from_str::<serde_json::Value>(&source.original).is_err()
+                {
+                    return Err("Invalid imported character source.".into());
+                }
+            }
             if c.name.trim().is_empty()
                 || c.name.len() > 200
                 || c.ancestry.len() > 200
@@ -168,6 +190,12 @@ impl Default for Realm {
 #[wasm_bindgen]
 pub fn ability_modifier(score: u8) -> i16 {
     (i16::from(score) - 10).div_euclid(2)
+}
+
+#[wasm_bindgen]
+pub fn preview_ddb(json: &str) -> Result<String, JsValue> {
+    let preview = ddb::parse(json).map_err(|e| JsValue::from_str(&e))?;
+    serde_json::to_string(&preview).map_err(|e| JsValue::from_str(&e.to_string()))
 }
 
 #[cfg(test)]
