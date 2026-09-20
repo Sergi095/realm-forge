@@ -13,7 +13,7 @@ export function mountWorld(container, initial, actions) {
   let data = initial,
     disposed = false;
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color("#d9e1d1");
+  scene.background = new THREE.Color("#111019");
   const renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
   renderer.setSize(container.clientWidth, 520);

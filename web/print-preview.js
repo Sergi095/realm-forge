@@ -6,7 +6,7 @@ export function createPrintPreview(container) {
   renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
   container.replaceChildren(renderer.domElement);
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color("#dce2d2");
+  scene.background = new THREE.Color("#111019");
   const camera = new THREE.PerspectiveCamera(42, 1, 0.1, 20000);
   const controls = new OrbitControls(camera, renderer.domElement);
   controls.enableDamping = true;
