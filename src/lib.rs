@@ -1,4 +1,6 @@
+mod character_sheet;
 mod ddb;
+use character_sheet::CharacterSheet;
 mod material_catalog;
 mod printing;
 use material_catalog::MATERIAL_COUNT;
@@ -17,6 +19,8 @@ pub struct Character {
     pub notes: String,
     pub inventory: String,
     pub spells: String,
+    #[serde(default)]
+    pub sheet: CharacterSheet,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source: Option<ImportedSource>,
 }
@@ -47,6 +51,9 @@ pub struct Block {
 fn default_elevations() -> Vec<u8> {
     vec![0; 40 * 28]
 }
+fn default_territory() -> Vec<bool> {
+    vec![true; 40 * 28]
+}
 fn default_scale() -> f64 {
     1.524
 }
@@ -60,6 +67,8 @@ pub struct Project {
     pub width: usize,
     pub height: usize,
     pub tiles: Vec<u8>,
+    #[serde(default = "default_territory")]
+    pub territory: Vec<bool>,
     pub pins: Vec<Pin>,
     #[serde(default = "default_elevations")]
     pub elevations: Vec<u8>,
@@ -78,6 +87,7 @@ impl Default for Project {
             width: 40,
             height: 28,
             tiles: vec![0; 40 * 28],
+            territory: default_territory(),
             pins: vec![],
             elevations: default_elevations(),
             blocks: vec![],
@@ -93,7 +103,8 @@ impl Project {
         if self.width != 40 || self.height != 28 || self.tiles.len() != self.width * self.height {
             return Err("Invalid map dimensions.".into());
         }
-        if self.elevations.len() != self.tiles.len()
+        if self.territory.len() != self.tiles.len()
+            || self.elevations.len() != self.tiles.len()
             || self.elevations.iter().any(|v| *v > 24)
             || !self.meters_per_tile.is_finite()
             || !(0.1..=100_000.0).contains(&self.meters_per_tile)
@@ -125,6 +136,7 @@ impl Project {
             );
         }
         for c in &self.characters {
+            c.sheet.validate()?;
             if let Some(source) = &c.source {
                 if source.kind != "dndbeyond"
                     || source.id == 0
@@ -168,7 +180,18 @@ fn parse_project(json: &str) -> Result<Project, String> {
     if json.len() > 5_000_000 {
         return Err("Backup is larger than 5 MB.".into());
     }
-    let p: Project = serde_json::from_str(json).map_err(|e| format!("Invalid backup: {e}"))?;
+    let mut p: Project = serde_json::from_str(json).map_err(|e| format!("Invalid backup: {e}"))?;
+    p.validate()?;
+    for c in &mut p.characters {
+        if c.sheet.import_version == 0 {
+            if let Some(source) = &c.source {
+                if let Ok(preview) = ddb::parse(&source.original) {
+                    c.sheet = preview.character.sheet;
+                }
+            }
+            c.sheet.import_version = 1;
+        }
+    }
     p.validate()?;
     Ok(p)
 }
@@ -255,7 +278,7 @@ impl Realm {
         .map_err(|e| JsValue::from_str(&e))
     }
     pub fn brush(&mut self, x: usize, y: usize, size: usize, terrain: u8, tool: u8) -> bool {
-        if x >= 40 || y >= 28 || ![1, 3, 5, 9].contains(&size) || terrain > 11 || tool > 3 {
+        if x >= 40 || y >= 28 || ![1, 3, 5, 9].contains(&size) || terrain > 11 || tool > 5 {
             return false;
         }
         let radius = size / 2;
@@ -263,6 +286,18 @@ impl Realm {
         for yy in y.saturating_sub(radius)..=(y + radius).min(27) {
             for xx in x.saturating_sub(radius)..=(x + radius).min(39) {
                 let i = yy * 40 + xx;
+                if tool >= 4 {
+                    if xx.abs_diff(x).pow(2) + yy.abs_diff(y).pow(2) > radius.pow(2) + radius {
+                        continue;
+                    }
+                    let active = tool == 4;
+                    changed |= self.project.territory[i] != active;
+                    self.project.territory[i] = active;
+                    continue;
+                }
+                if !self.project.territory[i] {
+                    continue;
+                }
                 if tool == 0 {
                     if self.project.tiles[i] != terrain {
                         self.project.tiles[i] = terrain;
@@ -282,7 +317,12 @@ impl Realm {
         changed
     }
     pub fn place_block(&mut self, x: usize, y: usize, z: u8, material: u16) -> bool {
-        if x >= 40 || y >= 28 || z > 63 || material >= MATERIAL_COUNT {
+        if x >= 40
+            || y >= 28
+            || z > 63
+            || material >= MATERIAL_COUNT
+            || !self.project.territory[y * 40 + x]
+        {
             return false;
         }
         if let Some(block) = self
@@ -315,7 +355,11 @@ impl Realm {
         }
     }
     pub fn paint(&mut self, x: usize, y: usize, terrain: u8) -> bool {
-        if x >= self.project.width || y >= self.project.height || terrain > 11 {
+        if x >= self.project.width
+            || y >= self.project.height
+            || terrain > 11
+            || !self.project.territory[y * self.project.width + x]
+        {
             return false;
         }
         let tile = &mut self.project.tiles[y * self.project.width + x];
@@ -372,7 +416,7 @@ mod tests {
     #[test]
     fn entire_material_catalog_is_supported_and_saved() {
         let catalog: serde_json::Value =
-            serde_json::from_str(include_str!("../web/minecraft-catalog.json")).unwrap();
+            serde_json::from_str(include_str!("../web/material-catalog.json")).unwrap();
         assert_eq!(
             catalog["blocks"].as_array().unwrap().len() + 24,
             MATERIAL_COUNT as usize
@@ -432,13 +476,28 @@ mod tests {
     #[test]
     fn old_worlds_gain_scale_and_building_defaults() {
         let mut v = serde_json::to_value(Project::default()).unwrap();
-        for key in ["elevations", "blocks", "meters_per_tile"] {
+        for key in ["elevations", "blocks", "meters_per_tile", "territory"] {
             v.as_object_mut().unwrap().remove(key);
         }
         let p = parse_project(&v.to_string()).unwrap();
         assert_eq!(p.meters_per_tile, 1.524);
         assert_eq!(p.elevations.len(), 1120);
         assert!(p.blocks.is_empty());
+    }
+    #[test]
+    fn territory_brush_saves_and_prevents_building_outside_the_outline() {
+        let mut r = Realm::new();
+        assert!(r.brush(8, 8, 5, 0, 5));
+        assert!(!r.project.territory[8 * 40 + 8]);
+        assert!(!r.place_block(8, 8, 1, 0));
+        assert!(!r.paint(8, 8, 3));
+        let restored = parse_project(&r.snapshot()).unwrap();
+        assert_eq!(restored.territory, r.project.territory);
+        assert!(r.brush(8, 8, 1, 0, 4));
+        assert!(r.place_block(8, 8, 1, 0));
+        let mut value = serde_json::to_value(restored).unwrap();
+        value["territory"] = serde_json::json!([true]);
+        assert!(parse_project(&value.to_string()).is_err());
     }
     #[test]
     fn building_and_brush_operations_remain_bounded() {

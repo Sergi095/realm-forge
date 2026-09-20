@@ -40,7 +40,7 @@ export async function openPrintWorld(realm) {
   const world = JSON.parse(realm.snapshot()),
     dialog = document.createElement("dialog");
   dialog.className = "print-dialog";
-  dialog.innerHTML = `<div class="ddb-heading"><div><div class="kicker">FROM YOUR WORLD TO YOUR TABLE</div><h2>3D print your world</h2></div><button id="print-close" aria-label="Close print preview">×</button></div><p>Your world covers <strong>${distance(world.width * world.meters_per_tile)} × ${distance(world.height * world.meters_per_tile)}</strong>. Each tile represents ${distance(world.meters_per_tile)}.</p><div class="print-layout"><form id="print-form"><label>Print format<select id="print-format"><option value="3mf">3MF · color model</option><option value="stl">STL · single-color geometry</option></select></label><label>Choose print scale<select id="print-scale"><option value="width">Set whole-world width</option><option value="60">1:60 · 5 ft becomes 1 inch</option><option value="100">1:100</option><option value="250">1:250</option><option value="500">1:500</option><option value="1000">1:1,000</option><option value="custom">Custom scale ratio</option></select></label><label>Whole-world width (mm)<input id="print-width" type="number" min="4" max="2000" step="0.1" value="${settings.width}" required></label><label>Scale denominator (1 : …)<input id="print-ratio" type="number" min="1" max="1000000000" step="any" value="${settings.ratio}" required></label><label>Export area<select id="print-section"><option value="0">Entire world · 40 × 28 tiles</option><option value="8">Sections · 8 × 8 tiles</option><option value="5">Sections · 5 × 5 tiles</option></select></label><label id="print-part-label" hidden>Section<select id="print-part"></select></label><div class="form-grid"><label>Base thickness (mm)<input id="print-base" type="number" min="1" max="10" step="0.5" value="${settings.base}" required></label><label>Terrain height scale<input id="print-relief" type="number" min="0.25" max="3" step="0.25" value="${settings.relief}" required></label></div><label>Square print-bed size (mm)<input id="print-bed" type="number" min="40" max="2000" value="${settings.bed}" required></label><label class="check-label"><input id="print-trees" type="checkbox" ${settings.trees ? "checked" : ""}> Include trees</label><label class="check-label"><input id="print-pins" type="checkbox" ${settings.pins ? "checked" : ""}> Include location markers</label><details><summary>Print colors</summary><div id="print-colors" class="print-colors"></div><p class="hint">Assign a solid print color to each world material. Textures become colors, not physical materials.</p></details></form><section><div id="print-preview" aria-label="Printable model preview">Preparing the print preview…</div><div id="print-measurements" class="print-measurements" role="status"></div><p id="print-error" role="alert" hidden></p><p class="hint">This is a solid relief with a flat base. Terrain and structures are joined; spaces beneath roofs and bridges are filled. The preview shows the exported shape. 3MF retains these solid colors; STL is geometry only. Your slicer may require color-to-extruder assignments. Import in millimetres.</p><div class="actions"><button id="print-zip" hidden>Download all sections (.zip)</button><button id="print-download" class="primary" disabled>Download STL</button></div></section></div>`;
+  dialog.innerHTML = `<div class="ddb-heading"><div><div class="kicker">FROM YOUR WORLD TO YOUR TABLE</div><h2>3D print your world</h2></div><button id="print-close" aria-label="Close print preview">×</button></div><p>Your world covers <strong>${distance(world.width * world.meters_per_tile)} × ${distance(world.height * world.meters_per_tile)}</strong>. Each tile represents ${distance(world.meters_per_tile)}.</p><div class="print-layout"><form id="print-form"><label>Print format<select id="print-format"><option value="3mf">3MF · color model</option><option value="stl">STL · single-color geometry</option></select></label><label>Choose print scale<select id="print-scale"><option value="width">Set canvas width</option><option value="60">1:60 · 5 ft becomes 1 inch</option><option value="100">1:100</option><option value="250">1:250</option><option value="500">1:500</option><option value="1000">1:1,000</option><option value="custom">Custom scale ratio</option></select></label><label>Canvas width (mm)<input id="print-width" type="number" min="4" max="2000" step="0.1" value="${settings.width}" required></label><label>Scale denominator (1 : …)<input id="print-ratio" type="number" min="1" max="1000000000" step="any" value="${settings.ratio}" required></label><label>Export area<select id="print-section"><option value="0">Entire world · 40 × 28 tiles</option><option value="8">Sections · 8 × 8 tiles</option><option value="5">Sections · 5 × 5 tiles</option></select></label><label id="print-part-label" hidden>Section<select id="print-part"></select></label><div class="form-grid"><label>Base thickness (mm)<input id="print-base" type="number" min="1" max="10" step="0.5" value="${settings.base}" required></label><label>Terrain height scale<input id="print-relief" type="number" min="0.25" max="3" step="0.25" value="${settings.relief}" required></label></div><label>Square print-bed size (mm)<input id="print-bed" type="number" min="40" max="2000" value="${settings.bed}" required></label><label class="check-label"><input id="print-trees" type="checkbox" ${settings.trees ? "checked" : ""}> Include trees</label><label class="check-label"><input id="print-pins" type="checkbox" ${settings.pins ? "checked" : ""}> Include location markers</label><details><summary>Print colors</summary><div id="print-colors" class="print-colors"></div><p class="hint">Assign a solid print color to each world material. Textures become colors, not physical materials.</p></details></form><section><div id="print-preview" aria-label="Printable model preview">Preparing the print preview…</div><div id="print-measurements" class="print-measurements" role="status"></div><p id="print-error" role="alert" hidden></p><p class="hint">This is a solid relief with a flat base. Terrain and structures are joined; spaces beneath roofs and bridges are filled. The preview shows the exported shape. Territory cutouts have no base; separate islands print as separate pieces. Canvas width sets the scale across all 40 columns; dimensions below measure the actual outline. 3MF retains these solid colors; STL is geometry only. Your slicer may require color-to-extruder assignments. Import in millimetres.</p><div class="actions"><button id="print-zip" hidden>Download all sections (.zip)</button><button id="print-download" class="primary" disabled>Download STL</button></div></section></div>`;
   document.body.append(dialog);
   dialog.showModal();
   const $ = (s) => dialog.querySelector(s);
@@ -95,6 +95,17 @@ export async function openPrintWorld(realm) {
             w: Math.min(size, 40 - x),
             h: Math.min(size, 28 - y),
           });
+    if (size)
+      parts = parts.filter((p) =>
+        world.territory.some(
+          (on, i) =>
+            on &&
+            i % 40 >= p.x &&
+            i % 40 < p.x + p.w &&
+            Math.floor(i / 40) >= p.y &&
+            Math.floor(i / 40) < p.y + p.h,
+        ),
+      );
     $("#print-part").innerHTML = parts
       .map(
         (p, i) =>
@@ -188,6 +199,8 @@ export async function openPrintWorld(realm) {
       ).toFixed(2);
     current = parts[settings.part];
     try {
+      if (!current)
+        throw new Error("No territory to print. Draw an island first.");
       bytes = generate(current);
       model = modelFor(current);
       const view = new DataView(
@@ -203,23 +216,28 @@ export async function openPrintWorld(realm) {
             maxZ,
             view.getFloat32(84 + i * 50 + 12 + v * 12 + 8, true),
           );
-      const w = (current.w * settings.width) / 40,
-        h = (current.h * settings.width) / 40,
+      const min = [Infinity, Infinity],
+        max = [-Infinity, -Infinity];
+      for (const v of model.vertices)
+        for (let axis = 0; axis < 2; axis++) {
+          min[axis] = Math.min(min[axis], v[axis]);
+          max[axis] = Math.max(max[axis], v[axis]);
+        }
+      const w = max[0] - min[0],
+        h = max[1] - min[1],
         ratio = (world.width * world.meters_per_tile * 1000) / settings.width,
         fit = w <= settings.bed && h <= settings.bed;
       $("#print-measurements").innerHTML =
-        `<strong>${fmt(w)} × ${fmt(h)} × ${fmt(maxZ)} mm</strong><span>Scale 1:${fmt(ratio)} · ${fmt(settings.width / 40)} mm per tile</span><span>${fit ? "✓ Fits" : "Too large for"} a ${fmt(settings.bed)} × ${fmt(settings.bed)} mm bed${fit ? "" : " — choose smaller sections or reduce the print size"}.</span><span>${parts.length === 1 ? "One solid model" : `Section ${settings.part + 1} of ${parts.length}`} · ${triangles.toLocaleString()} triangles</span>`;
+        `<strong>${fmt(w)} × ${fmt(h)} × ${fmt(maxZ)} mm</strong><span>Scale 1:${fmt(ratio)} · ${fmt(settings.width / 40)} mm per tile</span><span>${fit ? "✓ Fits" : "Too large for"} a ${fmt(settings.bed)} × ${fmt(settings.bed)} mm bed${fit ? "" : " — choose smaller sections or reduce the print size"}.</span><span>${parts.length === 1 ? "World model" : `Section ${settings.part + 1} of ${parts.length}`} · ${triangles.toLocaleString()} triangles</span>`;
       $("#print-measurements").classList.toggle("over-bed", !fit);
       preview?.update(bytes, model, settings.colors);
       $("#print-download").disabled = false;
       $("#print-zip").disabled = false;
     } catch (e) {
-      $("#print-error").textContent =
-        String(e?.message || e) +
-        " Choose a smaller print size or a larger scale denominator.";
+      $("#print-error").textContent = String(e?.message || e);
       $("#print-error").hidden = false;
       $("#print-measurements").textContent =
-        "Preview is unavailable for these dimensions.";
+        "Preview is unavailable. Check the message above.";
     }
   }
   $("#print-format").onchange = update;

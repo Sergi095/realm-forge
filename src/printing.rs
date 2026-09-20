@@ -113,6 +113,9 @@ fn mesh_region(
     let mut surface_colors: Vec<u16> = project.tiles.iter().map(|v| *v as u16).collect();
     for b in &project.blocks {
         let i = b.y * project.width + b.x;
+        if !project.territory[i] {
+            continue;
+        }
         if b.z as f32 + 1.0 >= surface[i] {
             surface[i] = b.z as f32 + 1.0;
             surface_colors[i] = 12 + b.material;
@@ -141,13 +144,17 @@ fn mesh_region(
             let cy = (y.floor() as usize).min(project.height - 1);
             let tile = cy * project.width + cx;
             let radius = ((x - cx as f32 - 0.5).powi(2) + (y - cy as f32 - 0.5).powi(2)).sqrt();
-            let tree = if trees && project.tiles[tile] == 2 && surface_colors[tile] < 12 {
+            let tree = if trees
+                && project.territory[tile]
+                && project.tiles[tile] == 2
+                && surface_colors[tile] < 12
+            {
                 (1.0 - radius / 0.35).max(0.0) * 1.1
             } else {
                 0.0
             };
             // Low, solid markers, avoiding floating pins and thin stems.
-            let pin = if locations[tile] {
+            let pin = if project.territory[tile] && locations[tile] {
                 (1.0 - radius / 0.4).clamp(0.0, 0.75) * 1.2
             } else {
                 0.0
@@ -164,12 +171,61 @@ fn mesh_region(
         result.vertices.push([p[0], p[1], 0.0]);
     }
     let vertex = |x: usize, y: usize| y * (nx + 1) + x;
+    let active = |x: isize, y: isize| -> bool {
+        if x < 0 || y < 0 || x >= nx as isize || y >= ny as isize {
+            return false;
+        }
+        let tx = start_x + x as usize / SAMPLES;
+        let ty = start_y + (ny - 1 - y as usize) / SAMPLES;
+        project.territory[ty * project.width + tx]
+    };
+    // Separate corner-only contacts by a tiny clearance (0.5% of a tile).
+    // This avoids four side walls sharing one edge and produces manifold solids.
+    let mut corners = std::collections::HashMap::new();
+    for y in 1..ny {
+        for x in 1..nx {
+            let xx = x as isize;
+            let yy = y as isize;
+            let nw = active(xx - 1, yy - 1);
+            let ne = active(xx, yy - 1);
+            let sw = active(xx - 1, yy);
+            let se = active(xx, yy);
+            if (nw && se && !ne && !sw) || (ne && sw && !nw && !se) {
+                for (cx, cy, dx, dy) in [
+                    (x - 1, y - 1, -1.0, -1.0),
+                    (x, y - 1, 1.0, -1.0),
+                    (x - 1, y, -1.0, 1.0),
+                    (x, y, 1.0, 1.0),
+                ] {
+                    if !active(cx as isize, cy as isize) {
+                        continue;
+                    }
+                    let mut top = result.vertices[vertex(x, y)];
+                    top[0] += dx * tile_mm * 0.005;
+                    top[1] += dy * tile_mm * 0.005;
+                    let index = result.vertices.len();
+                    result.vertices.push(top);
+                    result.vertices.push([top[0], top[1], 0.0]);
+                    corners.insert((x, y, cx, cy), (index, index + 1));
+                }
+            }
+        }
+    }
     for y in 0..ny {
         for x in 0..nx {
-            let a = vertex(x, y);
-            let b = vertex(x + 1, y);
-            let c = vertex(x + 1, y + 1);
-            let d = vertex(x, y + 1);
+            if !active(x as isize, y as isize) {
+                continue;
+            }
+            let corner = |vx, vy| {
+                corners
+                    .get(&(vx, vy, x, y))
+                    .copied()
+                    .unwrap_or((vertex(vx, vy), vertex(vx, vy) + count))
+            };
+            let (a, aa) = corner(x, y);
+            let (b, bb) = corner(x + 1, y);
+            let (c, cc) = corner(x + 1, y + 1);
+            let (d, dd) = corner(x, y + 1);
             result.quad(a, b, c, d);
             let gx = start_x as f32 + (x as f32 + 0.5) / SAMPLES as f32;
             let gy = start_y as f32 + height as f32 - (y as f32 + 0.5) / SAMPLES as f32;
@@ -185,25 +241,43 @@ fn mesh_region(
             let n = result.colors.len();
             result.colors[n - 2] = color;
             result.colors[n - 1] = color;
-            result.quad(a + count, d + count, c + count, b + count);
+            result.quad(aa, dd, cc, bb);
+            for (nx, ny, u, v, uu, vv) in [
+                (x as isize, y as isize - 1, a, b, aa, bb),
+                (x as isize + 1, y as isize, b, c, bb, cc),
+                (x as isize, y as isize + 1, c, d, cc, dd),
+                (x as isize - 1, y as isize, d, a, dd, aa),
+            ] {
+                if !active(nx, ny) {
+                    result.quad(uu, vv, v, u);
+                }
+            }
         }
     }
-    for x in 0..nx {
-        let a = vertex(x, 0);
-        let b = vertex(x + 1, 0);
-        result.quad(a + count, b + count, b, a);
-        let a = vertex(x + 1, ny);
-        let b = vertex(x, ny);
-        result.quad(a + count, b + count, b, a);
+    if result.faces.is_empty() {
+        return Err("This area has no territory. Draw some land or choose another section.".into());
     }
-    for y in 0..ny {
-        let a = vertex(0, y + 1);
-        let b = vertex(0, y);
-        result.quad(a + count, b + count, b, a);
-        let a = vertex(nx, y);
-        let b = vertex(nx, y + 1);
-        result.quad(a + count, b + count, b, a);
+    // Omit unused canvas vertices so previews and slicers measure the real outline.
+    let mut used = vec![false; result.vertices.len()];
+    for f in &result.faces {
+        for i in f {
+            used[*i] = true;
+        }
     }
+    let mut indices = vec![0; used.len()];
+    let mut vertices = Vec::new();
+    for (i, v) in result.vertices.iter().enumerate() {
+        if used[i] {
+            indices[i] = vertices.len();
+            vertices.push(*v);
+        }
+    }
+    for f in &mut result.faces {
+        for i in f {
+            *i = indices[*i];
+        }
+    }
+    result.vertices = vertices;
     Ok(result)
 }
 
@@ -298,6 +372,9 @@ mod tests {
     use crate::{Pin, Realm};
     use std::collections::{HashMap, HashSet};
     fn verify(m: &Mesh) {
+        verify_topology(m, true);
+    }
+    fn verify_topology(m: &Mesh, connected: bool) {
         let mut edges: HashMap<(usize, usize), (usize, i32)> = HashMap::new();
         let mut volume = 0.0f64;
         for face in &m.faces {
@@ -328,6 +405,9 @@ mod tests {
             edges.values().all(|e| *e == (2, 0)),
             "closed consistently wound two-manifold mesh"
         );
+        if !connected {
+            return;
+        }
         assert_eq!(
             m.vertices.len() as isize - edges.len() as isize + m.faces.len() as isize,
             2
@@ -345,6 +425,50 @@ mod tests {
             }
         }
         assert_eq!(visited.len(), m.vertices.len(), "one connected solid");
+    }
+    #[test]
+    fn irregular_territories_holes_and_corner_contacts_are_closed() {
+        let mut p = Project::default();
+        p.territory.fill(false);
+        // A concave island, an internal hole, and an island touching at one corner.
+        for y in 3..14 {
+            for x in 4..17 {
+                p.territory[y * 40 + x] = true;
+            }
+        }
+        for y in 6..9 {
+            for x in 8..11 {
+                p.territory[y * 40 + x] = false;
+            }
+        }
+        for y in 10..14 {
+            for x in 13..17 {
+                p.territory[y * 40 + x] = false;
+            }
+        }
+        p.territory[2 * 40 + 3] = true;
+        let m = mesh(&p, 180.0, 2.0, 1.0, false, false).unwrap();
+        verify_topology(&m, false);
+        assert!(m.vertices.iter().all(|v| v[0] >= 13.5 && v[0] <= 76.5));
+        assert!(
+            m.faces.len()
+                < mesh(&Project::default(), 180.0, 2.0, 1.0, false, false)
+                    .unwrap()
+                    .faces
+                    .len()
+        );
+        p.territory.fill(false);
+        assert!(mesh(&p, 180.0, 2.0, 1.0, false, false).is_err());
+    }
+    #[test]
+    fn checkerboard_territory_has_manifold_separate_islands() {
+        let mut p = Project::default();
+        for y in 0..28 {
+            for x in 0..40 {
+                p.territory[y * 40 + x] = (x + y) % 2 == 0;
+            }
+        }
+        verify_topology(&mesh(&p, 180.0, 2.0, 1.0, false, false).unwrap(), false);
     }
     #[test]
     fn flat_solid_dimensions() {

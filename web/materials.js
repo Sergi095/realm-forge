@@ -1,11 +1,11 @@
 const catalogResponse = await fetch(
-  new URL("./minecraft-catalog.json", import.meta.url),
+  new URL("./material-catalog.json", import.meta.url),
 );
 if (!catalogResponse.ok)
   throw new Error("The material catalog could not load. Refresh to try again.");
 const catalog = await catalogResponse.json();
 export const catalogVersion = catalog.version;
-export const minecraftCount = catalog.current_keys.length;
+export const catalogCount = catalog.current_keys.length;
 export const terrains = [
   ["Meadow", "#91aa73", 0.6, "grass"],
   ["Water", "#679da5", 0.18, "water"],
@@ -64,7 +64,7 @@ export const materials = [
     catalog.blocks.map((m, index) => ({
       ...m,
       id: 24 + index,
-      source: "Minecraft",
+      source: "Blocks",
     })),
   );
 export const baseColorIndex = terrains.length + materials.length;
@@ -212,8 +212,13 @@ export function stampStructure(world, x, y, type, material) {
     throw new Error("Move the structure away from the edge of the map.");
   let floor = 0;
   for (let yy = y; yy < y + depth; yy++)
-    for (let xx = x; xx < x + width; xx++)
+    for (let xx = x; xx < x + width; xx++) {
+      if (world.territory[yy * 40 + xx] === false)
+        throw new Error(
+          "Draw enough territory beneath the whole structure first.",
+        );
       floor = Math.max(floor, Math.floor(groundHeight(world, xx, yy)));
+    }
   const blocks = new Map(world.blocks.map((b) => [`${b.x},${b.y},${b.z}`, b]));
   const put = (xx, yy, z, m = material) =>
     blocks.set(`${xx},${yy},${z}`, { x: xx, y: yy, z, material: m });

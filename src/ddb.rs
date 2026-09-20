@@ -1,5 +1,5 @@
 //! Import a user-provided D&D Beyond character snapshot, without network access.
-use crate::{ability_modifier, Character, ImportedSource, Project};
+use crate::{ability_modifier, Character, CharacterSheet, ImportedSource, Project};
 use serde::Serialize;
 use serde_json::Value;
 use std::collections::HashSet;
@@ -343,6 +343,7 @@ pub fn parse(json: &str) -> Result<Preview, String> {
         .collect();
     spell_lines.sort();
     spell_lines.dedup();
+    warnings.push("The expanded sheet imports proficiencies, skills, combat and spellcasting details where available. Armor Class is an estimate unless supplied directly; check special defenses, spell slots, and attack bonuses against D&D Beyond.".into());
     let character = Character {
         name: character_name.into(),
         ancestry: data["race"]["fullName"]
@@ -357,6 +358,7 @@ pub fn parse(json: &str) -> Result<Preview, String> {
         notes: notes.join("\n\n"),
         inventory: inventory.join("\n"),
         spells: spell_lines.join("\n"),
+        sheet: extended_sheet(data, &mods, &abilities, hp as u16, level as u8),
         source: Some(ImportedSource {
             kind: "dndbeyond".into(),
             id,
@@ -373,12 +375,346 @@ pub fn parse(json: &str) -> Result<Preview, String> {
     })
 }
 
+const ABILITIES: [&str; 6] = [
+    "strength",
+    "dexterity",
+    "constitution",
+    "intelligence",
+    "wisdom",
+    "charisma",
+];
+const SKILLS: [&str; 18] = [
+    "acrobatics",
+    "animal-handling",
+    "arcana",
+    "athletics",
+    "deception",
+    "history",
+    "insight",
+    "intimidation",
+    "investigation",
+    "medicine",
+    "nature",
+    "perception",
+    "performance",
+    "persuasion",
+    "religion",
+    "sleight-of-hand",
+    "stealth",
+    "survival",
+];
+fn extended_sheet(
+    data: &Value,
+    mods: &[&Value],
+    abilities: &[u8; 6],
+    hp: u16,
+    level: u8,
+) -> CharacterSheet {
+    let mut sheet = CharacterSheet {
+        import_version: 1,
+        ..Default::default()
+    };
+    let bounded = |v: &Value| number(v).map(|v| v.clamp(0, 65535) as u16);
+    sheet.current_hp = Some(
+        (hp as i64 + number(&data["bonusHitPoints"]).unwrap_or(0)
+            - number(&data["removedHitPoints"]).unwrap_or(0))
+        .clamp(0, 65535) as u16,
+    );
+    sheet.temporary_hp = bounded(&data["temporaryHitPoints"]).unwrap_or(0);
+    sheet.background = text(&data["background"]["customBackground"]["name"]).to_owned();
+    if sheet.background.is_empty() {
+        sheet.background = name(&data["background"]).into();
+    }
+    sheet.subclass = arr(&data["classes"])
+        .iter()
+        .map(|c| name(&c["subclassDefinition"]))
+        .filter(|s| !s.is_empty())
+        .collect::<Vec<_>>()
+        .join(" / ");
+    sheet.xp = number(&data["currentXp"]).unwrap_or(0).max(0) as u32;
+    sheet.inspiration = data["inspiration"] == true;
+    sheet.alignment = match number(&data["alignmentId"]) {
+        Some(1) => "Lawful good",
+        Some(2) => "Neutral good",
+        Some(3) => "Chaotic good",
+        Some(4) => "Lawful neutral",
+        Some(5) => "Neutral",
+        Some(6) => "Chaotic neutral",
+        Some(7) => "Lawful evil",
+        Some(8) => "Neutral evil",
+        Some(9) => "Chaotic evil",
+        _ => "",
+    }
+    .into();
+    sheet.size = text(&data["race"]["size"]).into();
+    if let Some(walk) = number(&data["race"]["weightSpeeds"]["normal"]["walk"]) {
+        sheet.speed = format!("{walk} ft.");
+    }
+    sheet.death_successes = number(&data["deathSaves"]["successCount"])
+        .unwrap_or(0)
+        .clamp(0, 3) as u8;
+    sheet.death_failures = number(&data["deathSaves"]["failCount"])
+        .unwrap_or(0)
+        .clamp(0, 3) as u8;
+    for (i, k) in ["cp", "sp", "ep", "gp", "pp"].iter().enumerate() {
+        sheet.currency[i] = number(&data["currencies"][k]).unwrap_or(0).max(0) as u32;
+    }
+    let mut langs = Vec::new();
+    let mut profs = Vec::new();
+    let mut senses = Vec::new();
+    let mut initiative_bonus: i16 = 0;
+    let mut armor_bonus: i16 = 0;
+    for m in mods.iter().filter(|m| unrestricted(m)) {
+        let subtype = text(&m["subType"]);
+        let kind = text(&m["type"]);
+        let bonus = modifier_value(m).unwrap_or(0).clamp(-100, 100) as i16;
+        for (i, a) in ABILITIES.iter().enumerate() {
+            if subtype == format!("{a}-saving-throws") {
+                if kind == "proficiency" {
+                    sheet.save_proficiencies[i] = true;
+                }
+                if kind == "bonus" {
+                    sheet.save_bonuses[i] = sheet.save_bonuses[i].saturating_add(bonus);
+                }
+            }
+            if subtype == "saving-throws" && kind == "bonus" {
+                sheet.save_bonuses[i] = sheet.save_bonuses[i].saturating_add(bonus);
+            }
+        }
+        for (i, skill) in SKILLS.iter().enumerate() {
+            if subtype == *skill {
+                if kind == "proficiency" {
+                    if sheet.skill_ranks[i] != 2 {
+                        sheet.skill_ranks[i] = 1;
+                    }
+                }
+                if kind == "expertise" {
+                    sheet.skill_ranks[i] = 2;
+                }
+                if kind == "half-proficiency" && sheet.skill_ranks[i] == 0 {
+                    sheet.skill_ranks[i] = 3;
+                }
+                if kind == "bonus" {
+                    sheet.skill_bonuses[i] = sheet.skill_bonuses[i].saturating_add(bonus);
+                }
+            }
+            if kind == "bonus" && subtype == "ability-checks" {
+                sheet.skill_bonuses[i] = sheet.skill_bonuses[i].saturating_add(bonus);
+            }
+        }
+        let label = text(&m["friendlySubtypeName"]);
+        let label = if label.is_empty() {
+            subtype.replace('-', " ")
+        } else {
+            label.into()
+        };
+        if kind == "language" {
+            langs.push(label.clone());
+        }
+        if kind == "proficiency" {
+            profs.push(label.clone());
+        }
+        if kind == "sense" {
+            senses.push(format!("{label} {} ft.", bonus));
+        }
+        if kind == "bonus" && subtype == "initiative" {
+            initiative_bonus = initiative_bonus.saturating_add(bonus);
+        }
+        if kind == "bonus" && subtype == "armor-class" {
+            armor_bonus = armor_bonus.saturating_add(bonus);
+        }
+    }
+    for values in [&mut langs, &mut profs, &mut senses] {
+        values.sort();
+        values.dedup();
+    }
+    sheet.languages = langs.join(", ");
+    sheet.proficiencies = profs.join(", ");
+    sheet.senses = senses.join(", ");
+    if initiative_bonus != 0 {
+        sheet.initiative =
+            Some((ability_modifier(abilities[1]) as i16).saturating_add(initiative_bonus));
+    }
+    let dex = ability_modifier(abilities[1]) as i16;
+    let mut ac = 10 + dex;
+    let mut shield = 0;
+    let mut attacks = Vec::new();
+    for item in arr(&data["inventory"])
+        .iter()
+        .filter(|i| i["equipped"] == true)
+    {
+        let definition = &item["definition"];
+        if let Some(base) = number(&definition["armorClass"]).filter(|v| (0..=100).contains(v)) {
+            match number(&definition["armorTypeId"]) {
+                Some(1) => ac = base as i16 + dex,
+                Some(2) => ac = base as i16 + dex.min(2),
+                Some(3) => ac = base as i16,
+                Some(4) => shield = base as i16,
+                _ => {}
+            }
+        }
+        let damage = text(&definition["damage"]["diceString"]);
+        if !damage.is_empty() {
+            attacks.push(format!(
+                "{} | {} {} | attack bonus: review",
+                name(item),
+                damage,
+                text(&definition["damageType"])
+            ));
+        }
+    }
+    sheet.armor_class = number(&data["armorClass"])
+        .filter(|v| (-100..=100).contains(v))
+        .map(|v| v as i16)
+        .or(Some(
+            ac.saturating_add(shield)
+                .saturating_add(armor_bonus)
+                .clamp(-100, 100),
+        ));
+    sheet.attacks = attacks.join("\n");
+    sheet.hit_dice = arr(&data["classes"])
+        .iter()
+        .filter_map(|c| {
+            number(&c["definition"]["hitDice"])
+                .map(|dice| format!("{}d{}", number(&c["level"]).unwrap_or(1), dice))
+        })
+        .collect::<Vec<_>>()
+        .join(" + ");
+    let casting: HashSet<_> = arr(&data["classes"])
+        .iter()
+        .filter_map(|c| {
+            number(&c["subclassDefinition"]["spellCastingAbilityId"])
+                .or_else(|| number(&c["definition"]["spellCastingAbilityId"]))
+        })
+        .filter(|v| (1..=6).contains(v))
+        .collect();
+    if casting.len() == 1 {
+        sheet.spell_ability = Some((*casting.iter().next().unwrap() - 1) as u8);
+    }
+    for slot in arr(&data["spellSlots"]) {
+        if let Some(n) = number(&slot["level"]).filter(|v| (1..=9).contains(v)) {
+            let i = n as usize - 1;
+            sheet.spell_slots[i] = number(&slot["available"]).unwrap_or(0).clamp(0, 99) as u8;
+            sheet.spell_slots_used[i] = number(&slot["used"]).unwrap_or(0).clamp(0, 99) as u8;
+        }
+    }
+    for slot in arr(&data["pactMagic"]) {
+        if let Some(n) = number(&slot["level"]).filter(|v| (1..=9).contains(v)) {
+            sheet.pact_level = n as u8;
+            sheet.pact_slots = number(&slot["available"]).unwrap_or(0).clamp(0, 99) as u8;
+        }
+    }
+    let mut feature_lines = Vec::new();
+    let mut add = |v: &Value| {
+        if !name(v).is_empty() {
+            let description = plain(text(&v["definition"]["description"]));
+            feature_lines.push(if description.is_empty() {
+                name(v).into()
+            } else {
+                format!("{}: {description}", name(v))
+            });
+        }
+    };
+    for v in arr(&data["feats"]) {
+        add(v);
+    }
+    for c in arr(&data["classes"]) {
+        for v in arr(&c["classFeatures"]) {
+            if number(&v["definition"]["requiredLevel"]).unwrap_or(0)
+                <= number(&c["level"]).unwrap_or(level as i64)
+            {
+                add(v);
+            }
+        }
+    }
+    for v in arr(&data["race"]["racialTraits"]) {
+        add(v);
+    }
+    feature_lines.sort();
+    feature_lines.dedup();
+    sheet.features = feature_lines.join("\n\n");
+    sheet.personality = plain(text(&data["traits"]["personalityTraits"]));
+    sheet.ideals = plain(text(&data["traits"]["ideals"]));
+    sheet.bonds = plain(text(&data["traits"]["bonds"]));
+    sheet.flaws = plain(text(&data["traits"]["flaws"]));
+    sheet.appearance = ["age", "height", "weight", "eyes", "skin", "hair"]
+        .iter()
+        .filter_map(|k| {
+            let v = &data[k];
+            if v.is_string() {
+                Some(format!("{k}: {}", text(v)))
+            } else if v.is_number() {
+                Some(format!("{k}: {v}"))
+            } else {
+                None
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("; ");
+    sheet.allies = plain(text(&data["notes"]["allies"]));
+    sheet
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use serde_json::json;
     fn sample() -> Value {
         json!({"id":123456,"name":"Ari","classes":[{"level":3,"definition":{"name":"Wizard"}}],"stats":[{"id":1,"value":8},{"id":2,"value":14},{"id":3,"value":14},{"id":4,"value":15},{"id":5,"value":12},{"id":6,"value":10}],"baseHitPoints":14,"race":{"fullName":"High Elf"},"modifiers":{"race":[{"id":"int","type":"bonus","subType":"intelligence-score","value":1}]}})
+    }
+    #[test]
+    fn imports_extended_sheet_and_training_precedence() {
+        let mut s = sample();
+        s["classes"][0]["definition"]["hitDice"] = json!(6);
+        s["classes"][0]["definition"]["spellCastingAbilityId"] = json!(4);
+        s["race"]["weightSpeeds"] = json!({"normal":{"walk":30}});
+        s["removedHitPoints"] = json!(4);
+        s["temporaryHitPoints"] = json!(3);
+        s["currencies"] = json!({"gp":42});
+        s["spellSlots"] = json!([{"level":1,"available":4,"used":1}]);
+        s["modifiers"]["background"] = json!([
+            {"type":"half-proficiency","subType":"arcana"},
+            {"type":"proficiency","subType":"arcana"},
+            {"type":"expertise","subType":"stealth"},
+            {"type":"proficiency","subType":"stealth"},
+            {"type":"proficiency","subType":"intelligence-saving-throws"},
+            {"type":"language","subType":"elvish","friendlySubtypeName":"Elvish"}
+        ]);
+        let c = parse(&s.to_string()).unwrap().character;
+        assert_eq!(c.sheet.current_hp, Some(16));
+        assert_eq!(c.sheet.temporary_hp, 3);
+        assert_eq!(c.sheet.skill_ranks[2], 1);
+        assert_eq!(c.sheet.skill_ranks[16], 2);
+        assert!(c.sheet.save_proficiencies[3]);
+        assert_eq!(c.sheet.languages, "Elvish");
+        assert_eq!(c.sheet.hit_dice, "3d6");
+        assert_eq!(c.sheet.spell_ability, Some(3));
+        assert_eq!(c.sheet.spell_slots[0], 4);
+        assert_eq!(c.sheet.spell_slots_used[0], 1);
+        assert_eq!(c.sheet.currency[3], 42);
+        assert_eq!(c.sheet.armor_class, Some(12));
+        assert_eq!(c.sheet.speed, "30 ft.");
+    }
+    #[test]
+    fn old_imports_are_enriched_without_overwriting_local_character_edits() {
+        let c = parse(&sample().to_string()).unwrap().character;
+        let mut value = serde_json::to_value(c).unwrap();
+        value.as_object_mut().unwrap().remove("sheet");
+        value["name"] = json!("My edited hero");
+        value["hp"] = json!(33);
+        let mut project = serde_json::to_value(Project::default()).unwrap();
+        project["characters"] = json!([value]);
+        let restored = crate::parse_project(&project.to_string()).unwrap();
+        assert_eq!(restored.characters[0].name, "My edited hero");
+        assert_eq!(restored.characters[0].hp, 33);
+        assert_eq!(restored.characters[0].sheet.import_version, 1);
+        assert_eq!(restored.characters[0].sheet.armor_class, Some(12));
+        let mut value = serde_json::to_value(restored).unwrap();
+        value["characters"][0]["sheet"]["armor_class"] = json!(18);
+        let restored = crate::parse_project(&value.to_string()).unwrap();
+        assert_eq!(restored.characters[0].sheet.armor_class, Some(18));
+        value["characters"][0]["sheet"]["skill_ranks"][0] = json!(4);
+        assert!(crate::parse_project(&value.to_string()).is_err());
     }
     #[test]
     fn imports_wrapped_and_raw() {

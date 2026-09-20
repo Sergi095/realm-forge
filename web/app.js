@@ -1,3 +1,9 @@
+import { shapeTool, insideTerritory, territoryPreset } from "./territory.js";
+import {
+  renderCharacterSheet,
+  renderSheetEditor,
+  readSheetForm,
+} from "./character-sheet.js";
 import { openMaterialPicker } from "./material-picker.js";
 import {
   blockKey,
@@ -11,8 +17,6 @@ import {
   materials,
   groundHeight,
   stampStructure,
-  catalogVersion,
-  minecraftCount,
 } from "./materials.js";
 import { openDdbImport } from "./ddb-import.js";
 import init, { Realm, ability_modifier } from "./pkg/realm_forge.js";
@@ -109,7 +113,7 @@ function dropMaterial(id, x, y, z) {
   return state();
 }
 function interactionBar() {
-  return `<div class="editor-controls" role="toolbar" aria-label="World interaction tools"><button data-quick-tool="select" class="${buildTool === "select" ? "primary" : ""}">↖ Select & move</button><button data-quick-tool="block" class="${buildTool === "block" ? "primary" : ""}">＋ Build</button><button data-quick-tool="navigate" class="${buildTool === "navigate" ? "primary" : ""}">✥ Pan / orbit</button>${mode === "2d" ? `<button id="zoom-out" aria-label="Zoom map out">−</button><button id="zoom-in" aria-label="Zoom map in">＋</button>` : ""}<button data-quick-tool="paint" class="${buildTool === "paint" ? "primary" : ""}">▧ Paint</button><button id="expand-editor">${expandedEditor ? "Close expanded view" : "Expand editor"}</button></div>`;
+  return `<div class="editor-controls" role="toolbar" aria-label="World interaction tools"><button data-quick-tool="select" class="${buildTool === "select" ? "primary" : ""}">↖ Select & move</button><button data-quick-tool="block" class="${buildTool === "block" ? "primary" : ""}">＋ Build</button><button data-quick-tool="navigate" class="${buildTool === "navigate" ? "primary" : ""}">✥ Pan / orbit</button>${mode === "2d" ? `<button id="zoom-out" aria-label="Zoom map out">−</button><button id="zoom-in" aria-label="Zoom map in">＋</button>` : ""}<button data-quick-tool="paint" class="${buildTool === "paint" ? "primary" : ""}">▧ Paint</button><button data-quick-tool="territory-add" class="${buildTool === "territory-add" ? "primary" : ""}">Draw territory</button><button data-quick-tool="territory-erase" class="${buildTool === "territory-erase" ? "primary" : ""}">Erase territory</button><button id="expand-editor">${expandedEditor ? "Close expanded view" : "Expand editor"}</button></div>`;
 }
 function materialDock() {
   return `<div id="selection-actions" class="selection-actions" hidden><strong id="selection-label" role="status"></strong><button id="select-connected">Select structure</button><button id="selection-up" aria-label="Raise selected blocks">↑ Raise</button><button id="selection-down" aria-label="Lower selected blocks">↓ Lower</button><button id="selection-delete" class="danger">Delete selected</button><button id="selection-clear">Deselect</button></div><div class="material-dock" aria-label="Quick material tray"><button id="all-materials" class="all-materials" aria-label="All materials">▦<span>All materials</span></button>${[
@@ -257,7 +261,7 @@ function render() {
   else renderLore();
 }
 function worldPanels(s) {
-  return `<section class="panel"><div class="eyebrow">WORLD SCALE</div><label>Distance per tile<select id="world-scale"><option value="1.524">5 feet · battle map</option><option value="3.048">10 feet · large battle map</option><option value="10">10 metres · settlement</option><option value="100">100 metres · district</option><option value="1000">1 kilometre · region</option><option value="custom">Custom metres per tile</option></select></label><label id="custom-scale-label" hidden>Metres per tile<input id="custom-scale" type="number" min="0.1" max="100000" step="any" value="${s.meters_per_tile}"></label><p id="world-size" class="hint"></p></section><section class="panel"><div class="eyebrow">MATERIAL LIBRARY · ${materials.length.toLocaleString()} BLOCKS</div><label>Find a material<input id="material-search" placeholder="Stone, wood, glass…" value="${esc(materialFilter)}"></label><button id="browse-materials" class="primary">All Minecraft materials</button><p id="material-results-count" class="hint"></p><div id="material-palette" class="material-palette"></div><p class="hint">Choose a material, then place blocks or stamp a structure. Right-click a block to remove it in build mode.</p></section>`;
+  return `<section class="panel"><div class="eyebrow">TERRITORY OUTLINE</div><label>Starting shape<select id="territory-preset"><option value="">Choose a shape…</option><option value="island">Island</option><option value="archipelago">Island chain</option><option value="blank">Blank · draw your own</option><option value="coastline">Follow existing coastline</option><option value="rectangle">Full rectangle</option></select></label><p class="hint">Draw or erase territory in 2D to shape islands, borders and openings. Erased areas disappear from 3D and print exports. Their contents return if you redraw them. Undo restores the previous shape.</p></section><section class="panel"><div class="eyebrow">WORLD SCALE</div><label>Distance per tile<select id="world-scale"><option value="1.524">5 feet · battle map</option><option value="3.048">10 feet · large battle map</option><option value="10">10 metres · settlement</option><option value="100">100 metres · district</option><option value="1000">1 kilometre · region</option><option value="custom">Custom metres per tile</option></select></label><label id="custom-scale-label" hidden>Metres per tile<input id="custom-scale" type="number" min="0.1" max="100000" step="any" value="${s.meters_per_tile}"></label><p id="world-size" class="hint"></p></section><section class="panel"><div class="eyebrow">MATERIAL LIBRARY · ${materials.length.toLocaleString()} BLOCKS</div><label>Find a material<input id="material-search" placeholder="Stone, wood, glass…" value="${esc(materialFilter)}"></label><button id="browse-materials" class="primary">Browse material library</button><p id="material-results-count" class="hint"></p><div id="material-palette" class="material-palette"></div><p class="hint">Choose a material, then place blocks or stamp a structure. Right-click a block to remove it in build mode.</p></section>`;
 }
 function renderWorld() {
   const s = state();
@@ -268,11 +272,15 @@ function renderWorld() {
       "Every great adventure begins with a place.",
       `<div class="view-switch"><button id="view-2d" class="${mode === "2d" ? "primary" : ""}">2D map</button><button id="view-3d" class="${mode === "3d" ? "primary" : ""}">3D world</button></div>`,
     ) +
-    `<div class="world-toolbar"><label>Tool<select id="build-tool"><option value="navigate">Pan / orbit</option><option value="select">Select & move</option><option value="paint">Paint terrain</option><option value="raise">Raise ground</option><option value="lower">Lower ground</option><option value="flatten">Level ground</option><option value="block">Place material block</option><option value="erase">Remove block</option><option value="stamp">Place structure</option></select></label><label>Brush<select id="brush-size"><option value="1">1 tile</option><option value="3">3 × 3</option><option value="5">5 × 5</option><option value="9">9 × 9</option></select></label><label>Structure<select id="structure-preset"><option value="cottage">Cottage · 5 × 5</option><option value="tower">Tower · 4 × 4</option><option value="wall">Wall · 7 tiles</option></select></label><button id="print-world" class="primary">3D print & scale</button></div><div class="atlas-layout"><section><div class="map-card ${expandedEditor ? "editor-expanded" : ""}">${interactionBar()}<div class="map-bar"><strong>${esc(s.title)}</strong><span>40 × 28 · ${mode === "2d" ? "TOP DOWN" : "PERSPECTIVE"}</span></div><div class="canvas-wrap" id="viewport">${mode === "2d" ? '<canvas id="map" width="1000" height="700" aria-label="World map: paint terrain or place locations with a pointer"></canvas>' : '<div id="scene" aria-label="Interactive 3D world"></div>'}</div>${materialDock()}<div class="map-foot"><span id="map-help">${mode === "2d" ? "Drag to paint · choose Place location to add a pin" : "Drag to orbit · scroll to zoom · enable paint to edit"}</span><span>5 tiles = ${(s.meters_per_tile * 5).toLocaleString()} m · <span id="block-count">${s.blocks.length} blocks</span></span></div></div><div class="locations"><div class="section-heading"><h2>Places & stories</h2><span>${s.pins.length} LOCATIONS</span></div><div class="pin-list">${s.pins.map((p, i) => `<button class="pin-item" data-pin="${i}"><strong>⌖ ${esc(p.name)}</strong><small>Tile ${p.x + 1}, ${p.y + 1} · ${p.notes ? "Has a story" : "An unwritten story"}</small></button>`).join("") || '<div class="empty" style="width:100%">Place a location on your map and give it a story.</div>'}</div><div id="pin-editor"></div></div></section><div class="atlas-tools">${worldPanels(s)}<section class="panel"><div class="eyebrow">SHAPE YOUR WORLD</div><h2>Terrain palette</h2><div class="terrain-list">${terrainNames.map((n, i) => `<button class="terrain ${i === terrain ? "selected" : ""}" data-terrain="${i}" aria-pressed="${i === terrain}"><span class="swatch" style="background:${colors[i]}"></span>${n}</button>`).join("")}</div><p class="hint">One world, two views. Your changes appear in both.</p></section><section class="panel"><div class="eyebrow">MAP TOOLS</div><div class="tool-stack"><button id="place-pin" class="${pinMode ? "primary" : ""}">⌖ ${pinMode ? "Click map to place" : "Place location"}</button>${mode === "3d" ? '<button id="paint-3d">Enable terrain painting</button><button id="reset-camera">Reset camera</button>' : ""}<button id="undo" ${undo.length ? "" : "disabled"}>↶ Undo</button><button id="redo" ${redo.length ? "" : "disabled"}>↷ Redo</button><button id="generate">✧ Generate island</button></div><p class="hint">Generate a starting landscape, then make it your own.</p></section></div></div>`;
+    `<div class="world-toolbar"><label>Tool<select id="build-tool"><option value="navigate">Pan / orbit</option><option value="select">Select & move</option><option value="paint">Paint terrain</option><option value="territory-add">Draw territory</option><option value="territory-erase">Erase territory</option><option value="raise">Raise ground</option><option value="lower">Lower ground</option><option value="flatten">Level ground</option><option value="block">Place material block</option><option value="erase">Remove block</option><option value="stamp">Place structure</option></select></label><label>Brush<select id="brush-size"><option value="1">1 tile</option><option value="3">3 × 3</option><option value="5">5 × 5</option><option value="9">9 × 9</option></select></label><label>Structure<select id="structure-preset"><option value="cottage">Cottage · 5 × 5</option><option value="tower">Tower · 4 × 4</option><option value="wall">Wall · 7 tiles</option></select></label><button id="print-world" class="primary">3D print & scale</button></div><div class="atlas-layout"><section><div class="map-card ${expandedEditor ? "editor-expanded" : ""}">${interactionBar()}<div class="map-bar"><strong>${esc(s.title)}</strong><span>40 × 28 · ${mode === "2d" ? "TOP DOWN" : "PERSPECTIVE"}</span></div><div class="canvas-wrap" id="viewport">${mode === "2d" ? '<canvas id="map" width="1000" height="700" aria-label="World map: paint terrain or place locations with a pointer"></canvas>' : '<div id="scene" aria-label="Interactive 3D world"></div>'}</div>${materialDock()}<div class="map-foot"><span id="map-help">${mode === "2d" ? "Drag to paint · choose Place location to add a pin" : "Drag to orbit · scroll to zoom · enable paint to edit"}</span><span>5 tiles = ${(s.meters_per_tile * 5).toLocaleString()} m · <span id="block-count">${s.blocks.length} blocks</span></span></div></div><div class="locations"><div class="section-heading"><h2>Places & stories</h2><span>${s.pins.length} LOCATIONS</span></div><div class="pin-list">${s.pins.map((p, i) => `<button class="pin-item" data-pin="${i}"><strong>⌖ ${esc(p.name)}</strong><small>Tile ${p.x + 1}, ${p.y + 1} · ${p.notes ? "Has a story" : "An unwritten story"}</small></button>`).join("") || '<div class="empty" style="width:100%">Place a location on your map and give it a story.</div>'}</div><div id="pin-editor"></div></div></section><div class="atlas-tools">${worldPanels(s)}<section class="panel"><div class="eyebrow">SHAPE YOUR WORLD</div><h2>Terrain palette</h2><div class="terrain-list">${terrainNames.map((n, i) => `<button class="terrain ${i === terrain ? "selected" : ""}" data-terrain="${i}" aria-pressed="${i === terrain}"><span class="swatch" style="background:${colors[i]}"></span>${n}</button>`).join("")}</div><p class="hint">One world, two views. Your changes appear in both.</p></section><section class="panel"><div class="eyebrow">MAP TOOLS</div><div class="tool-stack"><button id="place-pin" class="${pinMode ? "primary" : ""}">⌖ ${pinMode ? "Click map to place" : "Place location"}</button>${mode === "3d" ? '<button id="paint-3d">Enable terrain painting</button><button id="reset-camera">Reset camera</button>' : ""}<button id="undo" ${undo.length ? "" : "disabled"}>↶ Undo</button><button id="redo" ${redo.length ? "" : "disabled"}>↷ Redo</button><button id="generate">✧ Generate island</button></div><p class="hint">Generate a starting landscape, then make it your own.</p></section></div></div>`;
   document.querySelectorAll("[data-quick-tool]").forEach(
     (b) =>
       (b.onclick = () => {
         buildTool = b.dataset.quickTool;
+        if (shapeTool(buildTool)) {
+          mode = "2d";
+          selectionKeys.clear();
+        }
         pinMode = false;
         render();
       }),
@@ -325,8 +333,24 @@ function renderWorld() {
   $("#structure-preset").value = preset;
   $("#build-tool").onchange = (e) => {
     buildTool = e.target.value;
+    if (shapeTool(buildTool)) {
+      mode = "2d";
+      selectionKeys.clear();
+    }
     pinMode = false;
     render();
+  };
+  $("#territory-preset").onchange = (e) => {
+    if (!e.target.value) return;
+    const s = state();
+    s.territory = territoryPreset(s, e.target.value);
+    selectionKeys.clear();
+    if (commit(s, true)) {
+      mode = "2d";
+      buildTool = "territory-add";
+      pinMode = false;
+      render();
+    }
   };
   $("#brush-size").onchange = (e) => {
     brushSize = Number(e.target.value);
@@ -374,7 +398,7 @@ function renderWorld() {
         .includes(materialFilter.toLowerCase()),
     );
     $("#material-results-count").textContent =
-      `${available.length.toLocaleString()} materials · showing ${Math.min(60, available.length)} · Minecraft Java ${catalogVersion}`;
+      `${available.length.toLocaleString()} materials · showing ${Math.min(60, available.length)}`;
     $("#material-palette").innerHTML =
       available
         .slice(0, 60)
@@ -410,6 +434,7 @@ function renderWorld() {
     render();
   };
   $("#view-3d").onclick = () => {
+    if (shapeTool(buildTool)) buildTool = "navigate";
     mode = "3d";
     render();
   };
@@ -417,7 +442,7 @@ function renderWorld() {
     (b) =>
       (b.onclick = () => {
         terrain = +b.dataset.terrain;
-        buildTool = "paint";
+        if (!shapeTool(buildTool)) buildTool = "paint";
         pinMode = false;
         render();
       }),
@@ -464,6 +489,7 @@ function renderWorld() {
   selectionChanged();
 }
 function addPin(x, y) {
+  if (!insideTerritory(state(), x, y)) return;
   checkpoint();
   const s = state();
   s.pins.push({ x, y, name: "New location", notes: "" });
@@ -511,12 +537,26 @@ function applyBrush(x, y) {
     y,
     brushSize,
     terrain,
-    Math.max(0, ["paint", "raise", "lower", "flatten"].indexOf(buildTool)),
+    Math.max(
+      0,
+      [
+        "paint",
+        "raise",
+        "lower",
+        "flatten",
+        "territory-add",
+        "territory-erase",
+      ].indexOf(buildTool),
+    ),
   );
 }
 function applyBuild(x, y, z, erase = false) {
   if (x < 0 || x >= 40 || y < 0 || y >= 28 || z < 0 || z > 63) {
     notice("Keep blocks inside the world, at heights 0–63.");
+    return false;
+  }
+  if (!insideTerritory(state(), x, y)) {
+    notice("Draw territory here before placing blocks.");
     return false;
   }
   if (erase || buildTool === "erase") return realm.remove_block(x, y, z);
@@ -558,9 +598,12 @@ function setup2d() {
       ? `${touchUI ? "Tap" : "Click"} a block, then drag · Select structure moves touching blocks · Drag empty space to select an area`
       : buildTool === "navigate"
         ? "Swipe to pan the map · use + / − to zoom"
-        : `${touchUI ? "Tap" : "Click"} to place · drag to paint · drag a material into the world`;
+        : shapeTool(buildTool)
+          ? "Drag to draw or erase the map outline · choose Brush for a wider stroke · Undo restores your shape"
+          : `${touchUI ? "Tap" : "Click"} to place · drag to paint · drag a material into the world`;
   const draw = () => {
     const s = state();
+    const visible = (b) => insideTerritory(s, b.x, b.y);
     $("#block-count").textContent =
       `${s.blocks.length.toLocaleString()} / 12,000 blocks`;
     for (let y = 0; y < s.height; y++)
@@ -568,6 +611,11 @@ function setup2d() {
         const t = s.tiles[y * s.width + x],
           px = x * 25,
           py = y * 25;
+        if (!s.territory[y * s.width + x]) {
+          ctx.fillStyle = (x + y) % 2 ? "#14101c" : "#191421";
+          ctx.fillRect(px, py, 25, 25);
+          continue;
+        }
         ctx.fillStyle = colors[t];
         ctx.fillRect(px, py, 25, 25);
         ctx.strokeStyle = "#18351f12";
@@ -596,7 +644,7 @@ function setup2d() {
           ctx.stroke();
         }
       }
-    for (const b of [...s.blocks].sort((a, b) => a.z - b.z)) {
+    for (const b of s.blocks.filter(visible).sort((a, b) => a.z - b.z)) {
       ctx.fillStyle = materials[b.material].color;
       ctx.fillRect(b.x * 25 + 3, b.y * 25 + 3, 19, 19);
       ctx.strokeStyle = "#ffffff66";
@@ -604,7 +652,9 @@ function setup2d() {
     }
     ctx.save();
     ctx.lineWidth = 3;
-    for (const b of s.blocks.filter((b) => selectionKeys.has(blockKey(b)))) {
+    for (const b of s.blocks.filter(
+      (b) => visible(b) && selectionKeys.has(blockKey(b)),
+    )) {
       ctx.strokeStyle = "#fff3a3";
       ctx.strokeRect(b.x * 25 + 1, b.y * 25 + 1, 23, 23);
     }
@@ -612,7 +662,9 @@ function setup2d() {
       const result = planMove(s, selectionKeys, drag.dx, drag.dy, 0, drag.copy);
       ctx.strokeStyle = result.error ? "#ff6969" : "#00e6c3";
       ctx.fillStyle = result.error ? "#ff696955" : "#00e6c366";
-      for (const b of s.blocks.filter((b) => selectionKeys.has(blockKey(b)))) {
+      for (const b of s.blocks.filter(
+        (b) => visible(b) && selectionKeys.has(blockKey(b)),
+      )) {
         const x = (b.x + drag.dx) * 25,
           y = (b.y + drag.dy) * 25;
         ctx.fillRect(x, y, 25, 25);
@@ -648,6 +700,7 @@ function setup2d() {
     }
     ctx.restore();
     s.pins.forEach((p, i) => {
+      if (!visible(p)) return;
       ctx.fillStyle = "#fff7d8";
       ctx.beginPath();
       ctx.arc(p.x * 25 + 12.5, p.y * 25 + 12.5, 9, 0, Math.PI * 2);
@@ -667,9 +720,23 @@ function setup2d() {
       Math.floor(((e.clientY - r.top) / r.height) * 28),
     ];
   };
+  let lastTerritoryCell = null;
   const paint = (e) => {
     const [x, y] = cell(e);
     if (x < 0 || x >= 40 || y < 0 || y >= 28) return;
+    if (shapeTool(buildTool)) {
+      const [ax, ay] = lastTerritoryCell || [x, y];
+      const steps = Math.max(Math.abs(x - ax), Math.abs(y - ay), 1);
+      for (let n = 0; n <= steps; n++)
+        changed =
+          applyBrush(
+            Math.round(ax + ((x - ax) * n) / steps),
+            Math.round(ay + ((y - ay) * n) / steps),
+          ) || changed;
+      lastTerritoryCell = [x, y];
+      if (changed) draw();
+      return;
+    }
     const key = x + "," + y;
     if (visited.has(key)) return;
     visited.add(key);
@@ -705,7 +772,9 @@ function setup2d() {
     const [x, y] = cell(e);
     if (buildTool === "select" && !pinMode) {
       const b = state()
-        .blocks.filter((b) => b.x === x && b.y === y)
+        .blocks.filter(
+          (b) => insideTerritory(state(), b.x, b.y) && b.x === x && b.y === y,
+        )
         .sort((a, b) => b.z - a.z)[0];
       if (b) {
         const key = blockKey(b);
@@ -745,6 +814,7 @@ function setup2d() {
     }
     checkpoint();
     visited.clear();
+    lastTerritoryCell = null;
     painting = true;
     canvas.setPointerCapture(e.pointerId);
     paint(e);
@@ -773,7 +843,9 @@ function setup2d() {
     if (buildTool !== "select") return;
     const [x, y] = cell(e),
       b = state()
-        .blocks.filter((b) => b.x === x && b.y === y)
+        .blocks.filter(
+          (b) => insideTerritory(state(), b.x, b.y) && b.x === x && b.y === y,
+        )
         .sort((a, b) => b.z - a.z)[0];
     if (b) selectBlocks(connectedBlocks(state().blocks, blockKey(b)));
   };
@@ -804,6 +876,7 @@ function setup2d() {
         ...state()
           .blocks.filter(
             (b) =>
+              insideTerritory(state(), b.x, b.y) &&
               b.x >= Math.min(m.x, m.endX) &&
               b.x <= Math.max(m.x, m.endX) &&
               b.y >= Math.min(m.y, m.endY) &&
@@ -838,7 +911,9 @@ function setup2d() {
     const [x, y] = cell({ clientX: d.x, clientY: d.y });
     if (d.phase === "drop") {
       const world = state(),
-        column = world.blocks.filter((b) => b.x === x && b.y === y),
+        column = world.blocks.filter(
+          (b) => insideTerritory(state(), b.x, b.y) && b.x === x && b.y === y,
+        ),
         z = column.length
           ? Math.max(...column.map((b) => b.z)) + 1
           : Math.floor(groundHeight(world, x, y));
@@ -925,7 +1000,7 @@ function renderCharacters() {
     ) +
     (!c
       ? '<div class="empty"><h2>Every story needs a hero.</h2><p>Create your first character to begin. Use your preferred D&D rules for class features and spells.</p></div>'
-      : `<div class="character-layout"><div class="character-list">${s.characters.map((c, i) => `<button class="character-card ${i === selected ? "selected" : ""}" data-character="${i}"><strong>${esc(c.name)}</strong><small>Level ${c.level} · ${esc(c.class || "Adventurer")}</small></button>`).join("")}</div><section class="panel">${c.source ? `<div class="import-source"><span>Imported from <a href="https://www.dndbeyond.com/characters/${c.source.id}" target="_blank" rel="noopener noreferrer">D&D Beyond ↗</a> · one-time copy</span><button id="download-ddb" type="button">Download original JSON</button><details><summary>Import notes</summary><ul>${c.source.warnings.map((w) => `<li>${esc(w)}</li>`).join("")}</ul></details></div>` : ""}<form id="character-form"><div class="form-grid">${[
+      : `<div class="character-layout"><div class="character-list">${s.characters.map((c, i) => `<button class="character-card ${i === selected ? "selected" : ""}" data-character="${i}"><strong>${esc(c.name)}</strong><small>Level ${c.level} · ${esc(c.class || "Adventurer")}</small></button>`).join("")}</div><section class="panel">${c.source ? `<div class="import-source"><span>Imported from <a href="https://www.dndbeyond.com/characters/${c.source.id}" target="_blank" rel="noopener noreferrer">D&D Beyond ↗</a> · one-time copy</span><button id="download-ddb" type="button">Download original JSON</button><details><summary>Import notes</summary><ul>${c.source.warnings.map((w) => `<li>${esc(w)}</li>`).join("")}</ul></details></div>` : ""}<div class="sheet-toolbar"><button id="view-character-sheet">View filled sheet</button><button id="download-character-pdf" class="primary">Download character PDF</button><button id="edit-character-details">Edit details</button></div><div id="character-sheet-preview">${renderCharacterSheet(c)}</div><details id="character-editor" class="character-editor" open><summary>Edit character details</summary><form id="character-form"><div class="form-grid">${[
           ["name", "Name", c.name],
           ["ancestry", "Ancestry / species", c.ancestry],
           ["class", "Class", c.class],
@@ -949,7 +1024,7 @@ function renderCharacters() {
           )
           .join(
             "",
-          )}</div><div class="actions"><button type="button" id="delete-character" class="danger">Delete character</button></div><p class="hint">Edits save automatically. Ability modifiers are calculated; this is a flexible sheet, not an edition-specific rules validator.</p></form></section></div>`);
+          )}</div>${renderSheetEditor(c)}<div class="actions"><button type="button" id="delete-character" class="danger">Delete character</button></div><p class="hint">Edits save automatically. Ability modifiers are calculated; skills, saves, and spellcasting use the proficiencies and overrides above. Blank overrides use automatic values.</p></form></details></section></div>`);
   $("#import-ddb").onclick = () =>
     openDdbImport({
       characters: state().characters,
@@ -1009,12 +1084,39 @@ function renderCharacters() {
       }),
   );
   if (!c) return;
+  $("#view-character-sheet").onclick = () =>
+    $("#character-sheet-preview").scrollIntoView({
+      behavior: "smooth",
+      block: "start",
+    });
+  $("#edit-character-details").onclick = () => {
+    $("#character-editor").open = true;
+    $("#character-form").scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+  $("#download-character-pdf").onclick = async () => {
+    const character = structuredClone(state().characters[selected]);
+    const button = $("#download-character-pdf");
+    button.disabled = true;
+    button.textContent = "Preparing PDF…";
+    try {
+      const { downloadCharacterPdf } = await import("./character-pdf.js");
+      await downloadCharacterPdf(character);
+    } catch (e) {
+      notice(`PDF could not be generated: ${e.message}`);
+    } finally {
+      if (button.isConnected) {
+        button.disabled = false;
+        button.textContent = "Download character PDF";
+      }
+    }
+  };
   $("#character-form").onsubmit = (e) => e.preventDefault();
   $("#character-form").oninput = (e) => {
     if (!e.target.name) return;
     if (!$("#character-form").checkValidity()) {
       invalidDraft = true;
       status("Incomplete fields · not saved");
+      $("#download-character-pdf").disabled = true;
       return;
     }
     const s = state(),
@@ -1032,7 +1134,10 @@ function renderCharacters() {
     c.level = Number(f.get("level"));
     c.hp = Number(f.get("hp"));
     c.abilities = c.abilities.map((_, i) => Number(f.get("ability-" + i)));
+    c.sheet = readSheetForm($("#character-form"), c);
     if (commit(s)) {
+      $("#download-character-pdf").disabled = false;
+      $("#character-sheet-preview").innerHTML = renderCharacterSheet(c);
       c.abilities.forEach((a, i) => ($("#mod-" + i).textContent = mod(a)));
       const card = $(`[data-character="${selected}"]`);
       card.querySelector("strong").textContent = c.name;

@@ -65,7 +65,7 @@ def appearance(key):
     if 'obsidian' in key:category='End';color='#30273f';texture='stone'
     if key=='bricks':color='#ac6552';texture='brick';category='Stone & masonry'
     return category,color,texture,accent
-path=ROOT/'web/minecraft-catalog.json'
+path=ROOT/'web/material-catalog.json'
 old=json.loads(path.read_text())['blocks'] if path.exists() else []
 existing={b['key'] for b in old}
 # IDs are append-only, preserving saved worlds when a later release adds blocks.

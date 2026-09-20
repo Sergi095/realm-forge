@@ -34,7 +34,35 @@ export function mountWorld(container, initial, actions) {
   controls.minDistance = 3;
   controls.maxDistance = 120;
   controls.enableDamping = true;
-  if (viewState) {
+  const territoryKey = data.territory.map((v) => (v ? 1 : 0)).join("");
+  function fitTerritory() {
+    if (data.territory.every(Boolean) || !data.territory.some(Boolean)) {
+      camera.position.set(32, 35, 38);
+      controls.target.set(0, 0, 0);
+      return;
+    }
+    let x0 = 40,
+      x1 = 0,
+      y0 = 28,
+      y1 = 0;
+    data.territory.forEach((on, i) => {
+      if (on) {
+        const x = i % 40,
+          y = Math.floor(i / 40);
+        x0 = Math.min(x0, x);
+        x1 = Math.max(x1, x);
+        y0 = Math.min(y0, y);
+        y1 = Math.max(y1, y);
+      }
+    });
+    const cx = (x0 + x1) / 2 - 19.5,
+      cy = (y0 + y1) / 2 - 13.5,
+      span = Math.max(8, x1 - x0 + 1, y1 - y0 + 1);
+    controls.target.set(cx, 0, cy);
+    camera.position.set(cx + span * 0.8, span * 0.9, cy + span);
+  }
+  fitTerritory();
+  if (viewState && viewState.territoryKey === territoryKey) {
     camera.position.fromArray(viewState.position);
     controls.target.fromArray(viewState.target);
   }
@@ -131,7 +159,9 @@ export function mountWorld(container, initial, actions) {
     trees.clear();
     pins.clear();
     for (const terrain of terrains) {
-      const ids = data.tiles.flatMap((t, i) => (t === terrain.id ? [i] : []));
+      const ids = data.tiles.flatMap((t, i) =>
+        t === terrain.id && data.territory[i] ? [i] : [],
+      );
       if (!ids.length) continue;
       const mesh = new THREE.InstancedMesh(
         cube,
@@ -155,6 +185,7 @@ export function mountWorld(container, initial, actions) {
     }
     const groups = new Map();
     for (const b of data.blocks) {
+      if (!data.territory[b.y * data.width + b.x]) continue;
       if (!groups.has(b.material)) groups.set(b.material, []);
       groups.get(b.material).push(b);
     }
@@ -177,6 +208,7 @@ export function mountWorld(container, initial, actions) {
     }
     for (let i = 0; i < data.tiles.length; i++)
       if (
+        data.territory[i] &&
         data.tiles[i] === 2 &&
         !data.blocks.some((b) => b.x === i % 40 && b.y === Math.floor(i / 40))
       ) {
@@ -187,6 +219,7 @@ export function mountWorld(container, initial, actions) {
         trees.add(mesh);
       }
     for (const p of data.pins) {
+      if (!data.territory[p.y * data.width + p.x]) continue;
       const mesh = new THREE.Mesh(pinGeo, pinMat);
       mesh.position.set(
         p.x - 19.5,
@@ -418,8 +451,7 @@ export function mountWorld(container, initial, actions) {
   const reset = document.querySelector("#reset-camera");
   if (reset)
     reset.onclick = () => {
-      camera.position.set(32, 35, 38);
-      controls.target.set(0, 0, 0);
+      fitTerritory();
       controls.update();
     };
   const observer = new ResizeObserver(() => {
@@ -447,6 +479,7 @@ export function mountWorld(container, initial, actions) {
     selectionMesh?.dispose();
     selectionMat.dispose();
     viewState = {
+      territoryKey,
       position: camera.position.toArray(),
       target: controls.target.toArray(),
     };

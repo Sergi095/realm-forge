@@ -99,7 +99,13 @@ export function planMove(world, keys, dx, dy, dz = 0, copy = false) {
   if (
     moved.some(
       (b) =>
-        b.x < 0 || b.x >= 40 || b.y < 0 || b.y >= 28 || b.z < 0 || b.z > 63,
+        b.x < 0 ||
+        b.x >= 40 ||
+        b.y < 0 ||
+        b.y >= 28 ||
+        b.z < 0 ||
+        b.z > 63 ||
+        world.territory?.[b.y * 40 + b.x] === false,
     )
   )
     return {

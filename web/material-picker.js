@@ -1,15 +1,14 @@
 import {
   materials,
   materialCategories,
-  catalogVersion,
-  minecraftCount,
+  catalogCount,
   textureCanvas,
 } from "./materials.js";
 
 export function openMaterialPicker(onChoose, initial = "") {
   const dialog = document.createElement("dialog");
   dialog.className = "material-dialog";
-  dialog.innerHTML = `<div class="ddb-heading"><div><div class="kicker">BUILD WITH ANY MATERIAL</div><h2>All materials</h2></div><button aria-label="Close material library">×</button></div><p>Minecraft Java ${catalogVersion}: ${minecraftCount.toLocaleString()} block entries, plus 24 original materials.</p><div class="material-filters"><label>Search all materials<input id="catalog-search" type="search" placeholder="Diamond ore, cherry, red wool…"></label><label>Category<select id="catalog-category"><option value="">All categories</option></select></label><label>Collection<select id="catalog-source"><option value="">All materials</option><option>Minecraft</option><option>Original</option></select></label></div><p id="catalog-count" role="status"></p><div id="catalog-results" class="catalog-results"></div><div class="catalog-pages"><button id="catalog-prev">Previous</button><span id="catalog-page"></span><button id="catalog-next">Next</button></div><p class="hint">Choose a material, then click or tap the world to build. Each entry uses an original procedural texture and a block shape; game-specific shapes and mechanics are not simulated. Print exports use solid colors.</p>`;
+  dialog.innerHTML = `<div class="ddb-heading"><div><div class="kicker">BUILD WITH ANY MATERIAL</div><h2>All materials</h2></div><button aria-label="Close material library">×</button></div><p>Block collection: ${catalogCount.toLocaleString()} block entries, plus 24 original materials.</p><div class="material-filters"><label>Search all materials<input id="catalog-search" type="search" placeholder="Diamond ore, cherry, red wool…"></label><label>Category<select id="catalog-category"><option value="">All categories</option></select></label><label>Collection<select id="catalog-source"><option value="">All materials</option><option>Blocks</option><option>Original</option></select></label></div><p id="catalog-count" role="status"></p><div id="catalog-results" class="catalog-results"></div><div class="catalog-pages"><button id="catalog-prev">Previous</button><span id="catalog-page"></span><button id="catalog-next">Next</button></div><p class="hint">Choose a material, then click or tap the world to build. Each entry uses an original procedural texture and a block shape; game-specific shapes and mechanics are not simulated. Print exports use solid colors.</p>`;
   document.body.append(dialog);
   dialog.showModal();
   const $ = (q) => dialog.querySelector(q);
@@ -87,8 +86,8 @@ export function openMaterialPicker(onChoose, initial = "") {
       const b = document.createElement("button");
       b.className = "catalog-material";
       b.dataset.catalogMaterial = m.id;
-      b.dataset.minecraftKey = m.key || "";
-      b.title = m.key ? `minecraft:${m.key}` : m.name;
+      b.dataset.blockKey = m.key || "";
+      b.title = m.key ? m.key : m.name;
       b.setAttribute("aria-label", `${m.name} · ${m.source}`);
       const swatch = textureCanvas(m);
       swatch.setAttribute("aria-hidden", "true");

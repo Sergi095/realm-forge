@@ -2,7 +2,7 @@ import { test, expect } from "@playwright/test";
 import { readFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 const catalog = JSON.parse(
-  readFileSync(new URL("../web/minecraft-catalog.json", import.meta.url)),
+  readFileSync(new URL("../web/material-catalog.json", import.meta.url)),
 );
 async function snapshot(page) {
   return page.evaluate(
@@ -32,7 +32,7 @@ test("every published catalog entry is available with distinct stable IDs and se
     const { materials } = await import("/materials.js");
     return {
       count: materials.length,
-      keys: materials.filter((m) => m.source === "Minecraft").map((m) => m.key),
+      keys: materials.filter((m) => m.source === "Blocks").map((m) => m.key),
       ids: materials.map((m) => m.id),
     };
   });
@@ -42,13 +42,12 @@ test("every published catalog entry is available with distinct stable IDs and se
   await page
     .getByRole("button", { name: "All materials", exact: true })
     .click();
+  await expect(page.locator("body")).not.toContainText(/minecraft/i);
   await expect(page.locator("#catalog-count")).toContainText("1,312");
-  await page.locator("#catalog-source").selectOption("Minecraft");
+  await page.locator("#catalog-source").selectOption("Blocks");
   await expect(page.locator("#catalog-count")).toContainText("1,288");
-  await page.locator("#catalog-search").fill("minecraft:diamond_ore");
-  await expect(
-    page.locator('[data-minecraft-key="diamond_ore"]'),
-  ).toBeVisible();
+  await page.locator("#catalog-search").fill("diamond_ore");
+  await expect(page.locator('[data-block-key="diamond_ore"]')).toBeVisible();
   await page.locator("#catalog-search").fill("wool");
   await page.locator("#catalog-category").selectOption("Colored blocks");
   await expect(page.locator("#catalog-count")).toContainText("48 materials");
@@ -74,11 +73,9 @@ test("phone catalog builds a high-ID material, saves it, renders it and exports 
   await expect(page.locator("#map")).toBeVisible();
   await page.getByRole("button", { name: "Expand editor", exact: true }).tap();
   await page.getByRole("button", { name: "All materials", exact: true }).tap();
-  await page.screenshot({ path: "test-results/phone-minecraft-library.png" });
+  await page.screenshot({ path: "test-results/phone-material-library.png" });
   await page.locator("#catalog-search").fill("waxed oxidized copper bulb");
-  const choice = page.locator(
-    '[data-minecraft-key="waxed_oxidized_copper_bulb"]',
-  );
+  const choice = page.locator('[data-block-key="waxed_oxidized_copper_bulb"]');
   const id = Number(await choice.getAttribute("data-catalog-material"));
   expect(id).toBeGreaterThan(255);
   await choice.tap();

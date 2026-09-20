@@ -9,13 +9,16 @@
       content="Build characters, paint fantasy worlds, and keep your campaign in your browser."
     />
     <title>DND Campaign Building · Your next adventure</title>
+    <link rel="icon" type="image/svg+xml" href="./assets/campaign-logo.svg" />
     <link rel="stylesheet" href="./style.css" />
   </head>
   <body>
     <header>
       <a class="brand" href="./"
-        ><span class="sigil">✧</span> DND CAMPAIGN BUILDING
-        <small>THE CAMPAIGN WORKSHOP</small></a
+        ><span class="sigil"
+          ><img src="./assets/campaign-logo.svg" alt="" width="30" height="30"
+        /></span>
+        DND CAMPAIGN BUILDING <small>THE CAMPAIGN WORKSHOP</small></a
       >
       <div class="header-actions">
         <span id="save-status" role="status">Opening your realm…</span
@@ -52,7 +55,10 @@
     </div>
     <footer>
       <span>CRAFT A WORLD WORTH GETTING LOST IN.</span
-      ><span>Rust + WebAssembly · No accounts · No cloud saves</span>
+      ><span
+        >Rust + WebAssembly · No accounts · No cloud saves ·
+        <a href="./assets/ATTRIBUTION.md">Icon credits</a></span
+      >
     </footer>
     <dialog id="confirm-dialog">
       <h2 id="confirm-title"></h2>
