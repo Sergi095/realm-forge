@@ -1,4 +1,5 @@
 mod ddb;
+mod printing;
 use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::*;
 
@@ -35,6 +36,20 @@ pub struct Pin {
 }
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
+pub struct Block {
+    pub x: usize,
+    pub y: usize,
+    pub z: u8,
+    pub material: u8,
+}
+fn default_elevations() -> Vec<u8> {
+    vec![0; 40 * 28]
+}
+fn default_scale() -> f64 {
+    1.524
+}
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Project {
     pub version: u8,
     pub title: String,
@@ -44,6 +59,12 @@ pub struct Project {
     pub height: usize,
     pub tiles: Vec<u8>,
     pub pins: Vec<Pin>,
+    #[serde(default = "default_elevations")]
+    pub elevations: Vec<u8>,
+    #[serde(default)]
+    pub blocks: Vec<Block>,
+    #[serde(default = "default_scale")]
+    pub meters_per_tile: f64,
 }
 impl Default for Project {
     fn default() -> Self {
@@ -56,6 +77,9 @@ impl Default for Project {
             height: 28,
             tiles: vec![0; 40 * 28],
             pins: vec![],
+            elevations: default_elevations(),
+            blocks: vec![],
+            meters_per_tile: default_scale(),
         }
     }
 }
@@ -67,7 +91,26 @@ impl Project {
         if self.width != 40 || self.height != 28 || self.tiles.len() != self.width * self.height {
             return Err("Invalid map dimensions.".into());
         }
-        if self.tiles.iter().any(|t| *t > 5) {
+        if self.elevations.len() != self.tiles.len()
+            || self.elevations.iter().any(|v| *v > 24)
+            || !self.meters_per_tile.is_finite()
+            || !(0.1..=100_000.0).contains(&self.meters_per_tile)
+        {
+            return Err("Invalid terrain elevation or world scale.".into());
+        }
+        let mut occupied = std::collections::HashSet::new();
+        if self.blocks.len() > 12_000
+            || self.blocks.iter().any(|b| {
+                b.x >= self.width
+                    || b.y >= self.height
+                    || b.z > 63
+                    || b.material > 23
+                    || !occupied.insert((b.x, b.y, b.z))
+            })
+        {
+            return Err("Invalid or duplicate building blocks. A world can hold up to 12,000 blocks, at heights 0–63.".into());
+        }
+        if self.tiles.iter().any(|t| *t > 11) {
             return Err("Unknown terrain in map.".into());
         }
         if self.characters.len() > 100 || self.pins.len() > 500 {
@@ -146,8 +189,131 @@ impl Realm {
         self.project = parse_project(json).map_err(|e| JsValue::from_str(&e))?;
         Ok(())
     }
+    pub fn export_stl(
+        &self,
+        width_mm: f32,
+        base_mm: f32,
+        relief: f32,
+        trees: bool,
+        pins: bool,
+    ) -> Result<Vec<u8>, JsValue> {
+        printing::export(&self.project, width_mm, base_mm, relief, trees, pins)
+            .map_err(|e| JsValue::from_str(&e))
+    }
+    pub fn export_stl_section(
+        &self,
+        tile_mm: f32,
+        base_mm: f32,
+        relief: f32,
+        trees: bool,
+        pins: bool,
+        x: usize,
+        y: usize,
+        width: usize,
+        height: usize,
+    ) -> Result<Vec<u8>, JsValue> {
+        printing::export_section(
+            &self.project,
+            tile_mm,
+            base_mm,
+            relief,
+            trees,
+            pins,
+            x,
+            y,
+            width,
+            height,
+        )
+        .map_err(|e| JsValue::from_str(&e))
+    }
+    pub fn export_print_model_section(
+        &self,
+        tile_mm: f32,
+        base_mm: f32,
+        relief: f32,
+        trees: bool,
+        pins: bool,
+        x: usize,
+        y: usize,
+        width: usize,
+        height: usize,
+    ) -> Result<String, JsValue> {
+        printing::export_model(
+            &self.project,
+            tile_mm,
+            base_mm,
+            relief,
+            trees,
+            pins,
+            x,
+            y,
+            width,
+            height,
+        )
+        .map_err(|e| JsValue::from_str(&e))
+    }
+    pub fn brush(&mut self, x: usize, y: usize, size: usize, terrain: u8, tool: u8) -> bool {
+        if x >= 40 || y >= 28 || ![1, 3, 5, 9].contains(&size) || terrain > 11 || tool > 3 {
+            return false;
+        }
+        let radius = size / 2;
+        let mut changed = false;
+        for yy in y.saturating_sub(radius)..=(y + radius).min(27) {
+            for xx in x.saturating_sub(radius)..=(x + radius).min(39) {
+                let i = yy * 40 + xx;
+                if tool == 0 {
+                    if self.project.tiles[i] != terrain {
+                        self.project.tiles[i] = terrain;
+                        changed = true;
+                    }
+                } else {
+                    let old = self.project.elevations[i];
+                    self.project.elevations[i] = match tool {
+                        1 => (old + 1).min(24),
+                        2 => old.saturating_sub(1),
+                        _ => 0,
+                    };
+                    changed |= old != self.project.elevations[i];
+                }
+            }
+        }
+        changed
+    }
+    pub fn place_block(&mut self, x: usize, y: usize, z: u8, material: u8) -> bool {
+        if x >= 40 || y >= 28 || z > 63 || material > 23 {
+            return false;
+        }
+        if let Some(block) = self
+            .project
+            .blocks
+            .iter_mut()
+            .find(|b| b.x == x && b.y == y && b.z == z)
+        {
+            let changed = block.material != material;
+            block.material = material;
+            return changed;
+        }
+        if self.project.blocks.len() >= 12_000 {
+            return false;
+        }
+        self.project.blocks.push(Block { x, y, z, material });
+        true
+    }
+    pub fn remove_block(&mut self, x: usize, y: usize, z: u8) -> bool {
+        if let Some(i) = self
+            .project
+            .blocks
+            .iter()
+            .position(|b| b.x == x && b.y == y && b.z == z)
+        {
+            self.project.blocks.remove(i);
+            true
+        } else {
+            false
+        }
+    }
     pub fn paint(&mut self, x: usize, y: usize, terrain: u8) -> bool {
-        if x >= self.project.width || y >= self.project.height || terrain > 5 {
+        if x >= self.project.width || y >= self.project.height || terrain > 11 {
             return false;
         }
         let tile = &mut self.project.tiles[y * self.project.width + x];
@@ -216,7 +382,7 @@ mod tests {
     fn bounds_and_generation() {
         let mut r = Realm::new();
         assert!(!r.paint(40, 0, 1));
-        assert!(!r.paint(0, 0, 6));
+        assert!(!r.paint(0, 0, 12));
         r.generate(42);
         r.project.validate().unwrap();
         let s = r.snapshot();
@@ -245,5 +411,33 @@ mod tests {
             notes: "".into(),
         });
         assert!(p.validate().is_err());
+    }
+    #[test]
+    fn old_worlds_gain_scale_and_building_defaults() {
+        let mut v = serde_json::to_value(Project::default()).unwrap();
+        for key in ["elevations", "blocks", "meters_per_tile"] {
+            v.as_object_mut().unwrap().remove(key);
+        }
+        let p = parse_project(&v.to_string()).unwrap();
+        assert_eq!(p.meters_per_tile, 1.524);
+        assert_eq!(p.elevations.len(), 1120);
+        assert!(p.blocks.is_empty());
+    }
+    #[test]
+    fn building_and_brush_operations_remain_bounded() {
+        let mut r = Realm::new();
+        assert!(r.place_block(0, 0, 0, 23));
+        assert!(!r.place_block(40, 0, 0, 0));
+        assert!(!r.place_block(0, 0, 64, 0));
+        assert!(!r.place_block(0, 0, 0, 24));
+        assert!(r.remove_block(0, 0, 0));
+        assert!(!r.remove_block(0, 0, 0));
+        assert!(r.brush(0, 0, 3, 7, 0));
+        assert_eq!(r.project.tiles.iter().filter(|t| **t == 7).count(), 4);
+        for _ in 0..30 {
+            r.brush(0, 0, 1, 0, 1);
+        }
+        assert_eq!(r.project.elevations[0], 24);
+        r.project.validate().unwrap();
     }
 }

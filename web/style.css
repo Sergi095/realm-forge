@@ -739,3 +739,239 @@ summary {
     flex-wrap: wrap;
   }
 }
+.brand {
+  font-size: 17px;
+  letter-spacing: 2px;
+}
+.world-toolbar {
+  display: flex;
+  gap: 12px;
+  align-items: end;
+  padding: 14px;
+  background: #e8ecdf;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+}
+.world-toolbar label {
+  flex: 1;
+  min-width: 135px;
+}
+.world-toolbar button {
+  margin-bottom: 1px;
+}
+.material-palette {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 5px;
+  max-height: 275px;
+  overflow: auto;
+  margin-top: 12px;
+}
+.material-choice {
+  display: flex;
+  gap: 5px;
+  align-items: center;
+  padding: 7px 5px;
+  font-size: 10px;
+  text-align: left;
+}
+.material-choice .swatch {
+  width: 23px;
+  min-width: 23px;
+}
+.material-choice.selected {
+  border-color: var(--green);
+  background: #e1ebd4;
+}
+.texture-wood {
+  background-image: repeating-linear-gradient(
+    0deg,
+    transparent 0 5px,
+    #0004 6px,
+    #fff2 7px
+  );
+}
+.texture-brick {
+  background-image:
+    repeating-linear-gradient(0deg, transparent 0 7px, #0005 8px),
+    repeating-linear-gradient(90deg, transparent 0 12px, #0003 13px);
+}
+.texture-stone {
+  background-image:
+    repeating-linear-gradient(0deg, transparent 0 6px, #0003 7px),
+    repeating-linear-gradient(90deg, transparent 0 6px, #0003 7px);
+}
+.texture-glass,
+.texture-metal {
+  background-image: linear-gradient(
+    135deg,
+    transparent 30%,
+    #fffa 33%,
+    transparent 39%,
+    transparent 55%,
+    #fff8 57%,
+    transparent 63%
+  );
+}
+.texture-water,
+.texture-lava {
+  background-image: repeating-linear-gradient(
+    10deg,
+    transparent 0 6px,
+    #fff5 7px,
+    transparent 8px
+  );
+}
+.print-dialog {
+  max-width: 1100px;
+  width: calc(100% - 24px);
+  max-height: 94vh;
+  overflow: auto;
+}
+.print-layout {
+  display: grid;
+  grid-template-columns: 310px 1fr;
+  gap: 24px;
+}
+.print-layout form {
+  display: grid;
+  gap: 12px;
+  align-content: start;
+}
+.print-layout .form-grid {
+  gap: 10px;
+}
+.check-label {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+.check-label input {
+  width: auto;
+  margin: 0;
+}
+#print-preview {
+  height: 380px;
+  background: #dce2d2;
+  border-radius: 8px;
+  overflow: hidden;
+}
+#print-preview canvas {
+  width: 100%;
+  height: 380px;
+  min-width: 0;
+  border: 0;
+  image-rendering: auto;
+}
+.print-measurements {
+  display: grid;
+  gap: 3px;
+  background: #e4ecd9;
+  padding: 15px;
+  border-radius: 6px;
+  margin: 15px 0;
+  font-size: 12px;
+}
+.print-measurements strong {
+  font:
+    23px Georgia,
+    serif;
+}
+.print-measurements.over-bed {
+  background: #f3e3c3;
+}
+#print-error {
+  background: #f3e3c3;
+  padding: 12px;
+  border-radius: 5px;
+}
+.print-dialog .actions {
+  flex-wrap: wrap;
+}
+@media (max-width: 720px) {
+  .brand {
+    font-size: 14px;
+    letter-spacing: 1px;
+  }
+  .print-layout {
+    grid-template-columns: 1fr;
+  }
+  .print-dialog {
+    padding: 18px;
+  }
+  .material-palette {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+  .world-toolbar label {
+    min-width: 110px;
+  }
+}
+.print-colors {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 12px;
+}
+.print-colors label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 11px;
+  gap: 8px;
+}
+.print-colors input {
+  width: 38px;
+  height: 30px;
+  padding: 2px;
+  margin: 0;
+  cursor: pointer;
+}
+.atlas-layout {
+  grid-template-columns: minmax(0, 1fr) 260px;
+}
+.atlas-tools {
+  display: flex;
+  flex-direction: column;
+  align-self: start;
+}
+.atlas-tools > .panel:has(.terrain-list),
+.atlas-tools > .panel:has(.material-palette) {
+  order: 1;
+}
+.atlas-tools > .panel:has(#undo) {
+  order: 2;
+}
+.atlas-tools > .panel:has(#world-scale) {
+  order: 3;
+}
+.atlas-tools > .panel[hidden] {
+  display: none;
+}
+.terrain-list {
+  grid-template-columns: 1fr 1fr;
+}
+.terrain {
+  padding: 7px;
+  font-size: 11px;
+  gap: 6px;
+}
+@media (max-width: 1100px) {
+  .atlas-layout {
+    grid-template-columns: 1fr;
+  }
+  .atlas-tools {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    align-items: start;
+  }
+}
+@media (max-width: 720px) {
+  .atlas-tools {
+    grid-template-columns: 1fr;
+  }
+  .terrain-list {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
